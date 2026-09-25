@@ -1,7 +1,7 @@
 from pathlib import Path
 import re,json,sys
 root=Path(__file__).resolve().parents[1]
-ts=list(root.rglob("*.ts"))
+ts=[p for p in root.rglob("*.ts") if not {"node_modules",".git"} & set(p.relative_to(root).parts)]
 aliases=json.loads((root/"tsconfig.json").read_text())["compilerOptions"]["paths"]
 errors=[]
 for p in ts:
