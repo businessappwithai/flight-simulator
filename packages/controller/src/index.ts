@@ -10,6 +10,8 @@ const clamp=(x:number,a=-1,b=1)=>Math.max(a,Math.min(b,x));
  */
 export const HOLD_FLOOR_M=30;
 const TURN_BANK=.5,CLIMB_VS=6,DESCEND_VS=-4,ABORT_VS=8,MAX_PITCH=.35;
+// Flight model: steady speed ≈ 340·throttle m/s (capped at 90). SLOW must sit well below the cap to slow down at all.
+const CRUISE_THROTTLE=.72,SLOW_THROTTLE=.14;
 export class IntentController {
  #last?:PilotIntent;#holdAltitude=70;
  controls(intent:PilotIntent,o:Observation):AircraftControls{
@@ -25,7 +27,7 @@ export class IntentController {
   const vs=intent==="CLIMB"?CLIMB_VS:intent==="DESCEND"?DESCEND_VS:intent==="ABORT"?ABORT_VS:clamp(.35*(this.#holdAltitude-o.altitude),-4,4);
   const pitchTarget=clamp(Math.asin(clamp(vs/Math.max(o.speed,12),-.9,.9)),-MAX_PITCH,MAX_PITCH);
   const elevator=o.speed<12&&o.altitude<3?0:clamp(4*(pitchTarget-pitch));
-  const throttle=intent==="CLIMB"?.82:intent==="SLOW"?.35:intent==="ABORT"?.9:.72;
+  const throttle=intent==="CLIMB"?.82:intent==="SLOW"?SLOW_THROTTLE:intent==="ABORT"?.9:CRUISE_THROTTLE;
   return {aileron,elevator,rudder:aileron*.15,throttle};
  }
 }
