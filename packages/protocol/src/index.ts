@@ -1,0 +1,123 @@
+export type Tick = bigint;
+
+export interface Vec3 {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
+export interface AircraftControls {
+  readonly aileron: number;
+  readonly elevator: number;
+  readonly rudder: number;
+  readonly throttle: number;
+}
+
+export interface AircraftState {
+  readonly position: Vec3;
+  readonly velocity: Vec3;
+  readonly heading: number;
+  readonly pitch: number;
+  readonly roll: number;
+  readonly throttle: number;
+  readonly grounded: boolean;
+  readonly crashed: boolean;
+}
+
+export interface EntityState {
+  readonly id: string;
+  readonly kind: "OBSTACLE" | "CHECKPOINT" | "RUNWAY";
+  readonly position: Vec3;
+  readonly velocity: Vec3;
+  readonly radius: number;
+}
+
+export interface ObjectiveState {
+  readonly phase: "OUTBOUND" | "RETURN" | "COMPLETE" | "FAILED";
+  readonly checkpointReached: boolean;
+}
+
+export interface RandomState {
+  readonly state: bigint;
+}
+
+export interface WorldSnapshot {
+  readonly tick: Tick;
+  readonly aircraft: AircraftState;
+  readonly entities: readonly EntityState[];
+  readonly objective: ObjectiveState;
+  readonly random: RandomState;
+}
+
+export interface Observation {
+  readonly tick: Tick;
+  readonly speed: number;
+  readonly altitude: number;
+  readonly heading: number;
+  readonly objectivePhase: ObjectiveState["phase"];
+  readonly nearestObstacle?: {
+    readonly distance: number;
+    readonly bearing: number;
+  };
+}
+
+export type PilotIntent =
+  | "HOLD"
+  | "TURN_LEFT"
+  | "TURN_RIGHT"
+  | "CLIMB"
+  | "DESCEND"
+  | "SLOW"
+  | "REROUTE"
+  | "ABORT";
+
+export interface DecisionContext {
+  readonly schemaVersion: 1;
+  readonly observation: Observation;
+  readonly temporal: {
+    readonly recentActions: readonly PilotIntent[];
+  };
+}
+
+
+export interface RewardVector {
+  readonly survival: number;
+  readonly separation: number;
+  readonly objective: number;
+  readonly stability: number;
+  readonly efficiency: number;
+}
+
+export interface DecisionOutcome {
+  readonly immediate?: RewardVector;
+  readonly after1s?: RewardVector;
+  readonly after3s?: RewardVector;
+  readonly terminal?: RewardVector;
+}
+
+export interface DecisionFrame {
+  readonly id: string;
+  readonly startTick: Tick;
+  readonly endTick?: Tick;
+  readonly requestedIntent: PilotIntent;
+  readonly executedIntent: PilotIntent;
+  readonly provider: string;
+  readonly probability: number;
+  readonly outcome?: DecisionOutcome;
+}
+
+export type TemporalStrategyName =
+  | "NONE"
+  | "PREVIOUS"
+  | "SEQUENCE"
+  | "OUTCOME_AWARE"
+  | "SHUFFLED";
+
+export interface TemporalSummary {
+  readonly strategy: TemporalStrategyName;
+  readonly recentActions: readonly PilotIntent[];
+  readonly effectiveActions: readonly PilotIntent[];
+  readonly ineffectiveActions: readonly PilotIntent[];
+}
+
+export type { SimCommand, SimEvent, InspectorCommand } from "./worker.ts";

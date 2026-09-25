@@ -1,0 +1,8 @@
+{
+  "name": "@flight/simulator-app",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "three": "^0.180.0"
+  }
+}

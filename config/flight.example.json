@@ -1,0 +1,22 @@
+{
+  "decision": {
+    "mode": "SHADOW",
+    "primary": {
+      "provider": "open-jev",
+      "model": "open-jev-pinned"
+    },
+    "shadow": {
+      "provider": "jev",
+      "model": "jev-pinned"
+    },
+    "timeoutMs": 250
+  },
+  "worldModel": {
+    "authority": "SHADOW",
+    "endpoint": "http://127.0.0.1:8090"
+  },
+  "runtime": {
+    "decisionIntervalTicks": 30,
+    "maxEpisodeTicks": 7200
+  }
+}

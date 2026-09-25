@@ -1,0 +1,13 @@
+{
+  "files": 205,
+  "typescriptFiles": 143,
+  "forbiddenMathRandom": [],
+  "protectedPackageAIDependencies": [],
+  "bunTestsExecutedHere": false,
+  "hostTscAttempt": "blocked: @types/bun not installed",
+  "bunAvailable": false,
+  "pythonStaticCheckExitCode": 0,
+  "xgboostDependency": "@wlearn/xgboost ^0.2.0",
+  "hostTscAttemptExitCode": 2,
+  "apiAuditExitCode": 0
+}

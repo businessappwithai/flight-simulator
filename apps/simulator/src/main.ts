@@ -1,0 +1,10 @@
+import * as THREE from "three";
+const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,5000);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);
+document.querySelector("#app")!.appendChild(renderer.domElement);
+const aircraft=new THREE.Mesh(new THREE.ConeGeometry(3,12,8),new THREE.MeshNormalMaterial());
+aircraft.rotation.x=Math.PI/2;scene.add(aircraft);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(3000,3000),new THREE.MeshNormalMaterial({wireframe:true}));
+ground.rotation.x=-Math.PI/2;scene.add(ground);camera.position.set(30,25,-45);camera.lookAt(0,10,0);
+function render(){requestAnimationFrame(render);renderer.render(scene,camera)}render();
+addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
