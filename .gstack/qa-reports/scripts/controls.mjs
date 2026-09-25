@@ -28,7 +28,8 @@ if(what==="sim"||what==="all"){
  await p.getByRole("button",{name:"Help"}).click();await p.mouse.click(15,400);const h3=await p.getByRole("dialog").count();check(A,"Help opens; Close and backdrop dismiss",h1&&!h2&&!h3);
  // Touch yoke (each direction) — engages manual, holds, releases to HOLD. Restart first: after landing, a mission ends and ignores flight input.
  await p.keyboard.press("KeyR");await p.getByRole("button",{name:"Slower"}).click();await p.waitForFunction(()=>flightSim.world.aircraft.position.y>40,null,{timeout:180000});
- for(const [intent,test] of [["CLIMB",(a,b)=>b.vy>a.vy+1||b.y>a.y+3],["DESCEND",(a,b)=>b.vy<a.vy-1],["TURN_LEFT",(a,b)=>b.hdg<a.hdg-.05],["TURN_RIGHT",(a,b)=>b.hdg>a.hdg+.05],["SLOW",(a,b)=>b.spd<a.spd-1]]){
+ // Order matters physically: turns hold pitch (not altitude), so descend last to avoid flying into the ground.
+ for(const [intent,test] of [["CLIMB",(a,b)=>b.vy>a.vy+1||b.y>a.y+3],["TURN_LEFT",(a,b)=>b.hdg<a.hdg-.05],["TURN_RIGHT",(a,b)=>b.hdg>a.hdg+.05],["SLOW",(a,b)=>b.spd<a.spd-1],["DESCEND",(a,b)=>b.vy<a.vy-1]]){
   const btn=p.locator(`.pad [data-intent="${intent}"]`);const a=await W(p);await btn.dispatchEvent("pointerdown",{pointerId:7});await waitT(p,2.5);const bb=await W(p);const shown=await txt(p,"[data-testid=mode]");
   await btn.dispatchEvent("pointerup",{pointerId:7});await p.waitForTimeout(300);const rel=await txt(p,"[data-testid=mode]");
   check(A,`Touch pad ${intent}`,bb.pilot==="MANUAL"&&shown===intent&&test(a,bb)&&rel==="HOLD",`${shown}; y ${a.y.toFixed(0)}→${bb.y.toFixed(0)} vy ${a.vy.toFixed(1)}→${bb.vy.toFixed(1)} hdg ${a.hdg.toFixed(2)}→${bb.hdg.toFixed(2)} spd ${a.spd.toFixed(0)}→${bb.spd.toFixed(0)}; release→${rel}`)}
@@ -48,8 +49,8 @@ if(what==="sim"||what==="all"){
  const same=readFileSync(`${OUT}/controls-orbit-before.png`).equals(readFileSync(`${OUT}/controls-orbit-after.png`));check(A,"Orbit camera drag rotates view",!same);await p.keyboard.press("Digit1");
  // Restart / New scenario (button and key)
  await p.getByRole("button",{name:"Restart"}).click();await p.waitForTimeout(600);const rs=await W(p);check(A,"Restart button",rs.t<3&&rs.phase==="OUTBOUND",`t=${rs.t.toFixed(1)}s`);
- await p.getByRole("button",{name:"New scenario"}).click();await p.waitForTimeout(800);const sc1=await p.evaluate(()=>new URL(location.href).search);check(A,"New scenario button",/scenario=seeded/.test(sc1)&&/seed=2/.test(sc1),sc1);
- await p.keyboard.press("KeyN");await p.waitForTimeout(800);const sc2=await p.evaluate(()=>new URL(location.href).search);await p.keyboard.press("KeyR");await p.waitForTimeout(600);check(A,"Keys N / R",/seed=3/.test(sc2)&&(await W(p)).t<3,sc2);
+ await p.getByRole("button",{name:"New scenario"}).click();await p.waitForFunction(()=>/seed=2/.test(location.search),null,{timeout:30000}).catch(()=>{});const sc1=await p.evaluate(()=>new URL(location.href).search);check(A,"New scenario button",/scenario=seeded/.test(sc1)&&/seed=2/.test(sc1),sc1);
+ await p.keyboard.press("KeyN");await p.waitForFunction(()=>/seed=3/.test(location.search),null,{timeout:30000}).catch(()=>{});const sc2=await p.evaluate(()=>new URL(location.href).search);await p.keyboard.press("KeyR");await p.waitForFunction(()=>Number(flightSim.world.tick)<360,null,{timeout:30000}).catch(()=>{});check(A,"Keys N / R",/seed=3/.test(sc2)&&(await W(p)).t<3,sc2);
  check(A,"No console errors",!p.errs.length,JSON.stringify(p.errs));await p.context().close();
 }
 if(what==="room"||what==="all"){
