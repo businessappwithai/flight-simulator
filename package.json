@@ -13,6 +13,7 @@
     "research": "bun apps/research/src/main.ts",
     "simulator": "bun apps/simulator/serve.ts",
     "simulator:build": "bun apps/simulator/build.ts",
+    "control-room": "bun --port 3100 apps/control-room/index.html",
     "audit": "bun scripts/audit.ts",
     "experiment": "bun apps/experiment/src/main.ts",
     "verify": "bun scripts/verify.ts",

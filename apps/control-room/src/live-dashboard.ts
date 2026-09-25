@@ -34,7 +34,7 @@ export class LiveDashboardModel{
  explain(id:string){
   const d=this.#decisions.get(id);if(!d)return undefined;
   const reasons=[`${d.provider}/${d.model} requested ${d.requested} at ${pct(d.confidence)} confidence.`];
-  const alt=d.alternatives.find(a=>a.intent!==d.requested);if(alt)reasons.push(`Next best alternative: ${alt.intent} at ${pct(alt.probability)}.`);
+  const alt=d.alternatives.find(a=>a.intent!==d.requested&&a.probability>0);if(alt)reasons.push(`Next best alternative: ${alt.intent} at ${pct(alt.probability)}.`);
   if(d.temporalPatterns.length)reasons.push(`Temporal evidence: ${d.temporalPatterns.join("; ")}.`);
   if(d.experienceIds.length)reasons.push(`${d.experienceIds.length} prior experience records contributed.`);
   for(const s of d.shadows??[])reasons.push(s.error?`Shadow ${s.provider}/${s.model} failed: ${s.error}.`:`Shadow ${s.provider}/${s.model} preferred ${s.top??"nothing"}${s.probability!==undefined?` at ${pct(s.probability)}`:""}.`);
