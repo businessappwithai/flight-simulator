@@ -6,11 +6,11 @@ export const CAMERA_MODES=["CHASE","COCKPIT","ORBIT","TOWER"] as const;
 export type CameraMode=typeof CAMERA_MODES[number];
 /** Chase, cockpit, free orbit and tower views, switched like the default views in desktop flight simulators. */
 export class CameraRig{
- readonly camera=new THREE.PerspectiveCamera(60,1,.3,60000);
  readonly orbit:OrbitControls;mode:CameraMode="CHASE";
  #chasePos=new THREE.Vector3();#lookAt=new THREE.Vector3();#initialised=false;
  #tower=toThree(-138,34,-30); // on the cab balcony, outside the tower geometry
- constructor(dom:HTMLElement){this.camera.layers.enable(EXTERIOR_LAYER);this.orbit=new OrbitControls(this.camera,dom);this.orbit.enabled=false;this.orbit.enableDamping=true;this.orbit.minDistance=12;this.orbit.maxDistance=900}
+ /** Drives the given camera (in R3F: the Canvas default camera). */
+ constructor(readonly camera:THREE.PerspectiveCamera,dom:HTMLElement){this.camera.layers.enable(EXTERIOR_LAYER);this.orbit=new OrbitControls(this.camera,dom);this.orbit.enabled=false;this.orbit.enableDamping=true;this.orbit.minDistance=12;this.orbit.maxDistance=900}
  set(mode:CameraMode,aircraft:THREE.Object3D){
   this.mode=mode;this.orbit.enabled=mode==="ORBIT";
   if(mode==="ORBIT"){const off=new THREE.Vector3(-30,12,-38).applyQuaternion(aircraft.quaternion);this.camera.position.copy(aircraft.position).add(off);this.orbit.target.copy(aircraft.position);this.orbit.update()}
@@ -18,7 +18,7 @@ export class CameraRig{
   this.camera.fov=mode==="COCKPIT"?72:mode==="TOWER"?35:60;this.camera.updateProjectionMatrix();this.#initialised=false;
  }
  next(aircraft:THREE.Object3D){this.set(CAMERA_MODES[(CAMERA_MODES.indexOf(this.mode)+1)%CAMERA_MODES.length]!,aircraft)}
- resize(w:number,h:number){this.camera.aspect=w/Math.max(1,h);this.camera.updateProjectionMatrix()}
+ dispose(){this.orbit.dispose()}
  update(aircraft:THREE.Object3D,eye:THREE.Object3D,dt:number){
   const k=1-Math.exp(-dt*4.5);
   if(this.mode==="CHASE"){

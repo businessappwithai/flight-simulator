@@ -101,11 +101,14 @@
       "@flight/config": [
         "./packages/config/src/index.ts"
       ]
-    }
+    },
+    "jsx": "react-jsx"
   },
   "include": [
     "apps/**/*.ts",
-    "./packages/**/*.ts",
-    "tests/**/*.ts"
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "tests/**/*.ts",
+    "scripts/**/*.ts"
   ]
 }
