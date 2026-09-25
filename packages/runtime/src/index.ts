@@ -22,7 +22,7 @@ export class FlightRuntime {
     const d=await this.pilot.decide(obs);
     const safe=this.safety.evaluate(d.intent,obs);
     current={id:d.decisionId,startTick:this.sim.tick,requestedIntent:d.intent,executedIntent:safe.executed,
-      provider:this.pilot.engines.primary.identity.provider,probability:d.probability} satisfies DecisionFrame;
+      provider:this.pilot.engines.primary.identity.provider,probability:d.probability,evidence:safe.overridden?{...d.evidence,safetyReason:safe.reason??"UNKNOWN"}:d.evidence} satisfies DecisionFrame;
     decisions.push(current);this.pilot.remember(current);
     active={intent:safe.executed,until:i+30};
    }

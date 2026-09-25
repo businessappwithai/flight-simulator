@@ -28,4 +28,14 @@ export class RingBuffer<T> {
   }
 
   snapshot(): readonly T[] { return this.recent(this.#size); }
+
+  /** Replaces the newest item matching `match`; returns false when it has already been evicted. */
+  update(match: (item: T) => boolean, next: (item: T) => T): boolean {
+    for (let i = 1; i <= this.#size; i++) {
+      const index = (this.#head - i + this.capacity) % this.capacity;
+      const item = this.#items[index];
+      if (item !== undefined && match(item)) { this.#items[index] = next(item); return true; }
+    }
+    return false;
+  }
 }

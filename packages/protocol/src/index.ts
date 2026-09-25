@@ -104,6 +104,27 @@ export interface DecisionFrame {
   readonly provider: string;
   readonly probability: number;
   readonly outcome?: DecisionOutcome;
+  /** What the decision was actually based on. Absent fields mean "not recorded", never "not relevant". */
+  readonly evidence?: DecisionEvidence;
+}
+
+/** Advisory sources never choose the intent; their result or failure is recorded for explanation. */
+export type AdvisorEvidence<T> =
+  | { readonly status: "OK"; readonly source: string; readonly latencyMs: number; readonly result: T }
+  | { readonly status: "ERROR" | "TIMEOUT"; readonly source: string; readonly latencyMs: number; readonly detail: string };
+
+export interface DecisionEvidence {
+  readonly model: string;
+  readonly candidates: readonly { readonly intent: PilotIntent; readonly probability: number }[];
+  readonly temporalStrategy: string;
+  readonly temporalPatterns: readonly string[];
+  readonly fingerprint: string;
+  readonly retrievedExperienceIds: readonly string[];
+  readonly providerDisagreement: number;
+  readonly shadows: readonly { readonly provider: string; readonly model: string; readonly top?: PilotIntent; readonly probability?: number; readonly error?: string }[];
+  readonly bestPractice?: AdvisorEvidence<readonly { readonly action: PilotIntent; readonly probability: number }[]>;
+  readonly worldModel?: AdvisorEvidence<readonly { readonly action: PilotIntent; readonly horizonSeconds: number; readonly predictedRisk: number; readonly uncertainty: number; readonly predictedReward: number }[]>;
+  readonly safetyReason?: string;
 }
 
 export type TemporalStrategyName =
