@@ -1,0 +1,246 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "flight-world",
+      "dependencies": {
+        "@wlearn/xgboost": "^0.2.0",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "latest",
+        "zod": "^4.0.0",
+      },
+    },
+    "apps/benchmark": {
+      "name": "@flight/benchmark-app",
+    },
+    "apps/experiment": {
+      "name": "@flight/experiment-app",
+    },
+    "apps/inspector": {
+      "name": "@flight/inspector-app",
+    },
+    "apps/research": {
+      "name": "@flight/research-app",
+    },
+    "apps/runtime": {
+      "name": "@flight/runtime-app",
+    },
+    "apps/simulator": {
+      "name": "@flight/simulator-app",
+      "dependencies": {
+        "three": "^0.180.0",
+      },
+    },
+    "packages/benchmark": {
+      "name": "@flight/benchmark",
+    },
+    "packages/cognition": {
+      "name": "@flight/cognition",
+    },
+    "packages/config": {
+      "name": "@flight/config",
+    },
+    "packages/controller": {
+      "name": "@flight/controller",
+    },
+    "packages/counterfactual": {
+      "name": "@flight/counterfactual",
+    },
+    "packages/decision-core": {
+      "name": "@flight/decision-core",
+    },
+    "packages/decision-jev": {
+      "name": "@flight/decision-jev",
+    },
+    "packages/decision-open-jev": {
+      "name": "@flight/decision-open-jev",
+    },
+    "packages/experience": {
+      "name": "@flight/experience",
+    },
+    "packages/experiments": {
+      "name": "@flight/experiments",
+    },
+    "packages/failure-analysis": {
+      "name": "@flight/failure-analysis",
+    },
+    "packages/memory": {
+      "name": "@flight/memory",
+    },
+    "packages/pilot-registry": {
+      "name": "@flight/pilot-registry",
+    },
+    "packages/protocol": {
+      "name": "@flight/protocol",
+    },
+    "packages/recorder": {
+      "name": "@flight/recorder",
+    },
+    "packages/replay": {
+      "name": "@flight/replay",
+    },
+    "packages/research": {
+      "name": "@flight/research",
+    },
+    "packages/runtime": {
+      "name": "@flight/runtime",
+    },
+    "packages/safety": {
+      "name": "@flight/safety",
+    },
+    "packages/scenario-generator": {
+      "name": "@flight/scenario-generator",
+    },
+    "packages/scenarios": {
+      "name": "@flight/scenarios",
+    },
+    "packages/sensors": {
+      "name": "@flight/sensors",
+    },
+    "packages/simulation": {
+      "name": "@flight/simulation",
+    },
+    "packages/skill-discovery": {
+      "name": "@flight/skill-discovery",
+    },
+    "packages/skills": {
+      "name": "@flight/skills",
+    },
+    "packages/world": {
+      "name": "@flight/world",
+    },
+    "packages/world-model": {
+      "name": "@flight/world-model",
+    },
+  },
+  "packages": {
+    "@flight/benchmark": ["@flight/benchmark@workspace:packages/benchmark"],
+
+    "@flight/benchmark-app": ["@flight/benchmark-app@workspace:apps/benchmark"],
+
+    "@flight/cognition": ["@flight/cognition@workspace:packages/cognition"],
+
+    "@flight/config": ["@flight/config@workspace:packages/config"],
+
+    "@flight/controller": ["@flight/controller@workspace:packages/controller"],
+
+    "@flight/counterfactual": ["@flight/counterfactual@workspace:packages/counterfactual"],
+
+    "@flight/decision-core": ["@flight/decision-core@workspace:packages/decision-core"],
+
+    "@flight/decision-jev": ["@flight/decision-jev@workspace:packages/decision-jev"],
+
+    "@flight/decision-open-jev": ["@flight/decision-open-jev@workspace:packages/decision-open-jev"],
+
+    "@flight/experience": ["@flight/experience@workspace:packages/experience"],
+
+    "@flight/experiment-app": ["@flight/experiment-app@workspace:apps/experiment"],
+
+    "@flight/experiments": ["@flight/experiments@workspace:packages/experiments"],
+
+    "@flight/failure-analysis": ["@flight/failure-analysis@workspace:packages/failure-analysis"],
+
+    "@flight/inspector-app": ["@flight/inspector-app@workspace:apps/inspector"],
+
+    "@flight/memory": ["@flight/memory@workspace:packages/memory"],
+
+    "@flight/pilot-registry": ["@flight/pilot-registry@workspace:packages/pilot-registry"],
+
+    "@flight/protocol": ["@flight/protocol@workspace:packages/protocol"],
+
+    "@flight/recorder": ["@flight/recorder@workspace:packages/recorder"],
+
+    "@flight/replay": ["@flight/replay@workspace:packages/replay"],
+
+    "@flight/research": ["@flight/research@workspace:packages/research"],
+
+    "@flight/research-app": ["@flight/research-app@workspace:apps/research"],
+
+    "@flight/runtime": ["@flight/runtime@workspace:packages/runtime"],
+
+    "@flight/runtime-app": ["@flight/runtime-app@workspace:apps/runtime"],
+
+    "@flight/safety": ["@flight/safety@workspace:packages/safety"],
+
+    "@flight/scenario-generator": ["@flight/scenario-generator@workspace:packages/scenario-generator"],
+
+    "@flight/scenarios": ["@flight/scenarios@workspace:packages/scenarios"],
+
+    "@flight/sensors": ["@flight/sensors@workspace:packages/sensors"],
+
+    "@flight/simulation": ["@flight/simulation@workspace:packages/simulation"],
+
+    "@flight/simulator-app": ["@flight/simulator-app@workspace:apps/simulator"],
+
+    "@flight/skill-discovery": ["@flight/skill-discovery@workspace:packages/skill-discovery"],
+
+    "@flight/skills": ["@flight/skills@workspace:packages/skills"],
+
+    "@flight/world": ["@flight/world@workspace:packages/world"],
+
+    "@flight/world-model": ["@flight/world-model@workspace:packages/world-model"],
+
+    "@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
+
+    "@types/node": ["@types/node@26.6.2", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-X1P21scMv4zGKLYqjdGjaKa7COa0RKVYYZZN/NfvLQ1JegxFhdhpZG/Lyn8AXx6CDUavKAd11v6BvfpkDByK8g=="],
+
+    "@typescript/typescript-aix-ppc64": ["@typescript/typescript-aix-ppc64@7.0.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ=="],
+
+    "@typescript/typescript-darwin-arm64": ["@typescript/typescript-darwin-arm64@7.0.2", "", { "os": "darwin", "cpu": "arm64" }, "sha512-gowzar9MwS/aRWp6f3a4KUqzRjAZjOsmGNCM6LcTgXum+dBfgsBVMN+AgvOCCbguXyick6LJhpBszxMebJ8syA=="],
+
+    "@typescript/typescript-darwin-x64": ["@typescript/typescript-darwin-x64@7.0.2", "", { "os": "darwin", "cpu": "x64" }, "sha512-SZ9xZInqApNlNGc9s0W1VSsktYSOe9cFqNOIqmN1Gs8SmkjKZYFt017G4VwPxASInODuAdbTW7sXiFUf893RgA=="],
+
+    "@typescript/typescript-freebsd-arm64": ["@typescript/typescript-freebsd-arm64@7.0.2", "", { "os": "freebsd", "cpu": "arm64" }, "sha512-W5NH4y/J0plIIS5b2xvTEkU7JFxyqdMAOgf+Ilhl0vHQXKO5dZoxd+C/jEtq56c4F3wk71RB4BMRQ2XdI+bwYQ=="],
+
+    "@typescript/typescript-freebsd-x64": ["@typescript/typescript-freebsd-x64@7.0.2", "", { "os": "freebsd", "cpu": "x64" }, "sha512-UMGDx5sTpzNw3WiPebH7l90IWfJggEd+egHt/q6p7/Cm3zqoV7VxkGXt+3DxPIw8CcmvAB0j3sVVfbhX+M4Tpw=="],
+
+    "@typescript/typescript-linux-arm": ["@typescript/typescript-linux-arm@7.0.2", "", { "os": "linux", "cpu": "arm" }, "sha512-gffT3xPz9sR7j/YJExkyPntrI0P2EP9XbOyWzth2/Gs0RstK+90RBcO0ncXoXy/beYll1SXw846Nf2zdnEz0QQ=="],
+
+    "@typescript/typescript-linux-arm64": ["@typescript/typescript-linux-arm64@7.0.2", "", { "os": "linux", "cpu": "arm64" }, "sha512-Qh4eU4/y3yDjnfjjyPYihMj5/ODIlmt+Bzu17OI+fiSRDW57QmU5SiN63exPRNJPKUzcc1INa1NXdrJ+MqHjUQ=="],
+
+    "@typescript/typescript-linux-loong64": ["@typescript/typescript-linux-loong64@7.0.2", "", { "os": "linux", "cpu": "none" }, "sha512-uEHck9i8hoAzXPiYRib1O7miOnz23SxIeVl6F4LXox+qov1K35jHcEW6VHKvZI+pyvl7fZEP4MCU5LYvIq1GuQ=="],
+
+    "@typescript/typescript-linux-mips64el": ["@typescript/typescript-linux-mips64el@7.0.2", "", { "os": "linux", "cpu": "none" }, "sha512-R4KvAMnE43W5Qeqb0Ly56O3mWMWIAgsMyz36DCaycd5nbg/9kzm0liw3JocfRqyJY0KPmzFjbswozXyW0DnIYA=="],
+
+    "@typescript/typescript-linux-ppc64": ["@typescript/typescript-linux-ppc64@7.0.2", "", { "os": "linux", "cpu": "ppc64" }, "sha512-DORx5b3sd/4S7eayxm4FQv+A7CrkUIGRaHiwI8oiHTAI1fAPWhF4J0vAlkC8biAlHSVVwxMQ3tjZ2/DVbnQiiA=="],
+
+    "@typescript/typescript-linux-riscv64": ["@typescript/typescript-linux-riscv64@7.0.2", "", { "os": "linux", "cpu": "none" }, "sha512-wf0jqEDOjrPRnKwYRyyJDRo11KMbvMFrU+q4zqKyChODBzvlkbhNQfKvLxQCcwTpdDaXSHZTVuh0JoCrKCUMHQ=="],
+
+    "@typescript/typescript-linux-s390x": ["@typescript/typescript-linux-s390x@7.0.2", "", { "os": "linux", "cpu": "s390x" }, "sha512-IkwJc3L7yhytWd/ewjyxNDfOmswCm9GWMJT/ue/dU4aZNbwZeYAetq42VyLmsmSjvoX7z74X6ZaYCtzAr0EuGw=="],
+
+    "@typescript/typescript-linux-x64": ["@typescript/typescript-linux-x64@7.0.2", "", { "os": "linux", "cpu": "x64" }, "sha512-EYdf2cNg7rgCWJnxCdJ+F3V39O8ihb37eHAu1LK8oAFizgTQbPOK7zHHXbPt8rX24COqODXeI3sIf0fCXG7H/A=="],
+
+    "@typescript/typescript-netbsd-arm64": ["@typescript/typescript-netbsd-arm64@7.0.2", "", { "os": "none", "cpu": "arm64" }, "sha512-+polYF4MF04aPpO5FTkHran9yUQDSXqy5GiSDKpsll5jy3l3+g9QLhpf39T+ePtefhXLOGrLl0QIjkQP6VnelA=="],
+
+    "@typescript/typescript-netbsd-x64": ["@typescript/typescript-netbsd-x64@7.0.2", "", { "os": "none", "cpu": "x64" }, "sha512-8YIT0EHM/3dq10ZOVF/A7pc/YSMtbcecct4rWtexrnSCHOPcpC2KTLXfTCR6vDpnSiY12heNb1GiN/wu+T/FyA=="],
+
+    "@typescript/typescript-openbsd-arm64": ["@typescript/typescript-openbsd-arm64@7.0.2", "", { "os": "openbsd", "cpu": "arm64" }, "sha512-APT8+ClYnuYm1u9+kgGXoMj2VzWzcymwh2gNSQVySHfkRDGOTVkoWLjCmOQSaO+PoqQ57B0flRp9SA+7GnnkzQ=="],
+
+    "@typescript/typescript-openbsd-x64": ["@typescript/typescript-openbsd-x64@7.0.2", "", { "os": "openbsd", "cpu": "x64" }, "sha512-yX7s+Q0Dln0Dt9tEzZsAjXXR/+ytBM7AlglaqyeMPxQszJ1JhlJdZ6jLA+IzldHtflX81em7lDao1xXu+aRRkg=="],
+
+    "@typescript/typescript-sunos-x64": ["@typescript/typescript-sunos-x64@7.0.2", "", { "os": "sunos", "cpu": "x64" }, "sha512-dLJDGaLZ1D4HPQn62u1n8mBDkJREwMsAkCdkwd4Ieqw+x3TUyTsqY0YiBCtE6H6OzzgGk3iuZ3vFWRS+E8/d1g=="],
+
+    "@typescript/typescript-win32-arm64": ["@typescript/typescript-win32-arm64@7.0.2", "", { "os": "win32", "cpu": "arm64" }, "sha512-Gyl1Vy6OsWesLzmq+EP0Fb7b4Nid5232AvcA2SFcdYreldpNtYFFofPjnt62y9hQy7VTaZp65ICJjuAQRaVcIQ=="],
+
+    "@typescript/typescript-win32-x64": ["@typescript/typescript-win32-x64@7.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g=="],
+
+    "@wlearn/core": ["@wlearn/core@0.2.0", "", { "dependencies": { "@wlearn/types": "0.1.1" } }, "sha512-2ociuRhZHJkHrFhTMk2t6QubPyyblA5mDWi9DNL1/XHiamV+M5sKLUoMnwHLPnrZeZbMZqitQPQtE79kgW4Ggg=="],
+
+    "@wlearn/types": ["@wlearn/types@0.1.1", "", {}, "sha512-iI6mW9oaon1374DZUD8ivUUq4L6Yj/2STeZZcIbkXbcGnV43GAHnKa8KfOS4AiJv1Ngl+Hph5DZo39pMpRlGpQ=="],
+
+    "@wlearn/xgboost": ["@wlearn/xgboost@0.2.0", "", { "dependencies": { "@wlearn/core": "0.2.0" } }, "sha512-8BiFrjcmxpuKIKdahtvV7GlR8nY25ma+dgX6n7uS6yPi0zSV9TLvvhtopZRDclo5oOxfEgxdQ8opBpo1TL4Fxg=="],
+
+    "bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
+
+    "three": ["three@0.180.0", "", {}, "sha512-o+qycAMZrh+TsE01GqWUxUIKR1AL0S8pq7zDkYOQw8GqfX8b8VoCKYUoHbhiX5j+7hr8XsuHDVU6+gkQJQKg9w=="],
+
+    "typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
+
+    "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
+
+    "zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
+  }
+}
