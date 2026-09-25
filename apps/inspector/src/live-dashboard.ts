@@ -11,7 +11,7 @@ export class LiveDashboardModel{
  ingest(e:RuntimeEvent){
   if(e.type==="DECISION"){
    const f:any=e.frame,t:any=f.trace??f; // canonical DecisionFrame, frame.trace, or flat trace-shaped frame
-   const candidates=(t.candidates??f.candidates??[{intent:f.requestedIntent,probability:f.probability}]).filter((x:any)=>x?.intent) as {intent:string;probability:number}[];
+   const candidates=(t.candidates??f.candidates??[]).filter((x:any)=>x?.intent) as {intent:string;probability:number}[];
    const id=String(t.decisionId??f.id??`decision-${this.#order.length+1}`),requested=String(t.requested??f.requestedIntent??candidates[0]?.intent??"UNKNOWN"),executed=String(t.executed??f.executedIntent??requested);
    const confidence=Number(candidates[0]?.probability??f.probability??0),disagreement=Number(t.providerDisagreement??0);
    this.#decisions.set(id,{decisionId:id,requested,executed,provider:String(t.provider??f.provider??"unknown"),model:String(t.model??"unknown"),confidence,alternatives:candidates.slice(0,5),temporalPatterns:[...(t.temporalPatterns??[])],experienceIds:[...(t.retrievedExperienceIds??[])],disagreement,safetyReason:t.safetyReason,outcomes:{...(f.outcome??{})},startTick:f.startTick!==undefined?String(f.startTick):undefined});
