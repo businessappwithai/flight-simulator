@@ -4,7 +4,7 @@ import {TelemetryBuffer} from "./telemetry-buffer.ts";
 import {ReplayController} from "./replay-controller.ts";
 import {watchdog} from "./watchdog.ts";
 import {explanationIntegrity} from "./explanation-integrity.ts";
-const model=new LiveDashboardModel(),telemetry=new TelemetryBuffer();let paused=false,pinned:string|undefined;
+let model=new LiveDashboardModel();const telemetry=new TelemetryBuffer();let paused=false,pinned:string|undefined;
 const replay=new ReplayController(e=>showEvent(e));
 const $=(id:string)=>document.getElementById(id)!;
 // Telemetry (live or loaded from a replay file) is untrusted: build nodes with textContent, never innerHTML.
@@ -21,7 +21,7 @@ $("watchdog").replaceChildren(...findings.map(x=>el("div",`card ${x.severity==="
  $("evidence").replaceChildren(el("span","pill",`experiences ${d.experienceIds.length}`),el("span","pill",`disagreement ${d.disagreement.toFixed(3)}`),...d.temporalPatterns.map(x=>el("span","pill",x)));
  $("selectedSafety").textContent=d.executed!==d.requested?`${d.requested} → ${d.executed}: ${d.safetyReason??"unspecified"}`:"✓ Accepted without override";$("outcomes").textContent=JSON.stringify(d.outcomes,null,2);const integrity=explanationIntegrity(d);$("rawBody").textContent=JSON.stringify({...d,explanationIntegrity:integrity},null,2);$("pinState").textContent=pinned?`Pinned: ${d.decisionId}`:"Following latest decision";
 }
-export function showEvent(e:any){telemetry.push(e);model.ingest(e);if(!paused)render()}(globalThis as any).flightInspector={showEvent,model};
+export function showEvent(e:any){telemetry.push(e);model.ingest(e);if(!paused)render()}(globalThis as any).flightInspector={showEvent,get model(){return model}};
 $("pause").onclick=()=>{paused=!paused;$("pause").textContent=paused?"Resume UI":"Pause UI";if(!paused)render()};
 $("follow").onclick=()=>{pinned=undefined;$("follow").textContent="Following latest";render()};
 $("export").onclick=()=>{const blob=new Blob([telemetry.toJsonl()],{type:"application/x-ndjson"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="flight-world-telemetry.jsonl";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
@@ -29,6 +29,6 @@ document.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach(b=>b.onclick=
 window.addEventListener("message",e=>{if(e.origin!==location.origin)return;if(e.data?.type==="FLIGHT_RUNTIME_EVENT")showEvent(e.data.event)});
 
 $("loadReplay").onclick=()=>($("replayFile") as HTMLInputElement).click();
-($("replayFile") as HTMLInputElement).onchange=async e=>{const f=(e.target as HTMLInputElement).files?.[0];if(f){replay.loadJsonl(await f.text());$("status").textContent=`replay loaded: ${replay.position.total} events`}};
+($("replayFile") as HTMLInputElement).onchange=async e=>{const f=(e.target as HTMLInputElement).files?.[0];if(f){replay.loadJsonl(await f.text());model=new LiveDashboardModel();telemetry.clear();pinned=undefined;$("follow").textContent="Following latest";render();$("status").textContent=`replay loaded: ${replay.position.total} events`}(e.target as HTMLInputElement).value=""};
 $("replayStep").onclick=()=>replay.step();
 $("replayPlay").onclick=()=>{if(replay.state==="PLAYING"){replay.pause();$("replayPlay").textContent="Play"}else{replay.play(100);$("replayPlay").textContent="Pause replay"}};
