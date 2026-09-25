@@ -19,94 +19,93 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
     "paths": {
       "@flight/protocol": [
-        "packages/protocol/src/index.ts"
+        "./packages/protocol/src/index.ts"
       ],
       "@flight/simulation": [
-        "packages/simulation/src/index.ts"
+        "./packages/simulation/src/index.ts"
       ],
       "@flight/decision-core": [
-        "packages/decision-core/src/index.ts"
+        "./packages/decision-core/src/index.ts"
       ],
       "@flight/memory": [
-        "packages/memory/src/index.ts"
+        "./packages/memory/src/index.ts"
       ],
       "@flight/recorder": [
-        "packages/recorder/src/index.ts"
+        "./packages/recorder/src/index.ts"
       ],
       "@flight/cognition": [
-        "packages/cognition/src/index.ts"
+        "./packages/cognition/src/index.ts"
       ],
       "@flight/experience": [
-        "packages/experience/src/index.ts"
+        "./packages/experience/src/index.ts"
       ],
       "@flight/world-model": [
-        "packages/world-model/src/index.ts"
+        "./packages/world-model/src/index.ts"
       ],
       "@flight/counterfactual": [
-        "packages/counterfactual/src/index.ts"
+        "./packages/counterfactual/src/index.ts"
       ],
       "@flight/experiments": [
-        "packages/experiments/src/index.ts"
+        "./packages/experiments/src/index.ts"
       ],
       "@flight/benchmark": [
-        "packages/benchmark/src/index.ts"
+        "./packages/benchmark/src/index.ts"
       ],
       "@flight/failure-analysis": [
-        "packages/failure-analysis/src/index.ts"
+        "./packages/failure-analysis/src/index.ts"
       ],
       "@flight/skills": [
-        "packages/skills/src/index.ts"
+        "./packages/skills/src/index.ts"
       ],
       "@flight/scenario-generator": [
-        "packages/scenario-generator/src/index.ts"
+        "./packages/scenario-generator/src/index.ts"
       ],
       "@flight/research": [
-        "packages/research/src/index.ts"
+        "./packages/research/src/index.ts"
       ],
       "@flight/sensors": [
-        "packages/sensors/src/index.ts"
+        "./packages/sensors/src/index.ts"
       ],
       "@flight/controller": [
-        "packages/controller/src/index.ts"
+        "./packages/controller/src/index.ts"
       ],
       "@flight/safety": [
-        "packages/safety/src/index.ts"
+        "./packages/safety/src/index.ts"
       ],
       "@flight/runtime": [
-        "packages/runtime/src/index.ts"
+        "./packages/runtime/src/index.ts"
       ],
       "@flight/world": [
-        "packages/world/src/index.ts"
+        "./packages/world/src/index.ts"
       ],
       "@flight/skill-discovery": [
-        "packages/skill-discovery/src/index.ts"
+        "./packages/skill-discovery/src/index.ts"
       ],
       "@flight/pilot-registry": [
-        "packages/pilot-registry/src/index.ts"
+        "./packages/pilot-registry/src/index.ts"
       ],
       "@flight/replay": [
-        "packages/replay/src/index.ts"
+        "./packages/replay/src/index.ts"
       ],
       "@flight/decision-jev": [
-        "packages/decision-jev/src/index.ts"
+        "./packages/decision-jev/src/index.ts"
       ],
       "@flight/decision-open-jev": [
-        "packages/decision-open-jev/src/index.ts"
+        "./packages/decision-open-jev/src/index.ts"
       ],
       "@flight/scenarios": [
-        "packages/scenarios/src/index.ts"
+        "./packages/scenarios/src/index.ts"
       ],
       "@flight/config": [
-        "packages/config/src/index.ts"
+        "./packages/config/src/index.ts"
       ]
     }
   },
   "include": [
     "apps/**/*.ts",
-    "packages/**/*.ts",
+    "./packages/**/*.ts",
     "tests/**/*.ts"
   ]
 }
