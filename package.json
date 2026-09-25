@@ -1,0 +1,34 @@
+{
+  "name": "flight-world",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test",
+    "benchmark": "bun apps/benchmark/src/main.ts",
+    "research": "bun apps/research/src/main.ts",
+    "simulator": "bun apps/simulator/serve.ts",
+    "simulator:build": "bun apps/simulator/build.ts",
+    "control-room": "bun --port 3100 apps/control-room/index.html",
+    "audit": "bun scripts/audit.ts",
+    "experiment": "bun apps/experiment/src/main.ts",
+    "verify": "bun scripts/verify.ts",
+    "audit:deps": "bun scripts/dependency-audit.ts",
+    "research:manifest": "bun apps/research/src/cli.ts",
+    "check": "bun test && bun run audit",
+    "static-check": "python3 scripts/static-check.py",
+    "verify:all": "python3 scripts/static-check.py && bun run typecheck && bun test && bun run audit && bun run audit:deps"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "latest",
+    "zod": "^4.0.0"
+  },
+  "dependencies": {
+    "@wlearn/xgboost": "^0.2.0"
+  }
+}

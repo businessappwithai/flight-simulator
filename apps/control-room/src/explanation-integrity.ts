@@ -1,0 +1,2 @@
+import type {DecisionWhy} from "./live-dashboard.ts";
+export function explanationIntegrity(d:DecisionWhy){const missing:string[]=[];if(!d.provider||d.provider==="unknown")missing.push("provider");if(!d.model||d.model==="unknown")missing.push("model");if(!Number.isFinite(d.confidence))missing.push("confidence");if(!d.alternatives.length)missing.push("alternatives");return {complete:missing.length===0,missing}}

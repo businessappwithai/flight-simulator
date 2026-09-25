@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Flight World Control Room</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%276%27 fill=%27none%27 stroke=%27%238fa9d6%27 stroke-width=%272%27/%3E%3Ccircle cx=%278%27 cy=%278%27 r=%272%27 fill=%27%238fa9d6%27/%3E%3C/svg%3E">
+<style>
+:root{--bg:#080d18;--panel:#111a2b;--line:#263550;--text:#eaf0ff;--muted:#95a5bf;--ok:#3ecf8e;--ov:#ff6b6b;--dis:#f2c46d;--accent:#8fa9d6;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:var(--bg)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg)}
+button{font:inherit;font-size:13px;color:var(--text);background:#1a2942;border:1px solid #39506f;border-radius:7px;padding:7px 11px;min-height:34px;cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.45;cursor:default}button[aria-pressed=true]{border-color:var(--accent)}
+.muted{color:var(--muted);font-size:12px}
+.header{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;padding:10px max(16px,env(safe-area-inset-right)) 10px max(16px,env(safe-area-inset-left));border-bottom:1px solid var(--line);background:#0c1322}
+.title{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.actions{display:flex;gap:6px;flex-wrap:wrap}
+.badge{font-size:12px;padding:4px 9px;border:1px solid #48627d;border-radius:999px;white-space:nowrap}.badge.REPLAY{border-color:var(--dis);color:var(--dis)}
+.notices{padding:0 12px}.notice{margin:10px 0 0}.notice.warn{border-color:#8a6d2b}.notice.bad{border-color:#a4424a;background:#2a1418}
+.shell{display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:calc(100vh - 58px)}
+main{padding:12px;min-width:0}
+.side{border-left:1px solid var(--line);background:#0c1322;padding:14px;position:sticky;top:58px;height:calc(100vh - 58px);overflow:auto}
+.cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px;min-width:0}
+.metric{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.strip-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.legend{font-size:12px;color:var(--muted)}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 10px;vertical-align:-1px}
+.legend .ok,.tick.ok{background:var(--ok)}.legend .ov,.tick.ov{background:var(--ov)}.legend .dis,.tick.dis{background:var(--dis)}
+.strip{display:flex;flex-wrap:wrap;gap:3px;max-height:96px;overflow:auto}
+.tick{width:14px;height:26px;min-height:0;padding:0;border:0;border-radius:3px;opacity:.85}.tick.sel{outline:2px solid #fff;outline-offset:1px;opacity:1}
+.tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px}.tabs [aria-selected=true]{border-color:var(--accent);background:#23385a}
+.scroll{max-height:44vh;overflow:auto}
+.decision{display:grid;grid-template-columns:90px minmax(0,1fr) 70px 80px;gap:8px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:10px 8px}
+.decision:hover,.decision.sel{background:#162238}.decision>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.decision>span:nth-child(2){white-space:normal}
+.bar{height:7px;background:#25324a;border-radius:4px;overflow:hidden;margin:3px 0 8px}.bar>i{display:block;height:100%;background:var(--accent)}
+.reason{padding:7px 0;border-bottom:1px solid var(--line)}.reason.missing{color:var(--dis)}
+.selectedIntent{font-size:28px;font-weight:800;margin-top:4px}
+.pill{display:inline-block;border:1px solid #405475;border-radius:999px;padding:3px 8px;font-size:11px;margin:2px}
+h4{margin:16px 0 6px}pre{white-space:pre-wrap;word-break:break-word;font-size:12px}
+hr{border:0;border-top:1px solid var(--line)}
+/* iPad portrait and smaller laptops: single column, Why card after the timeline. */
+@media (max-width:1023px){.shell{grid-template-columns:1fr}.side{position:relative;top:0;height:auto;border-left:0;border-top:1px solid var(--line);scroll-margin-top:120px}.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:600px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.decision{grid-template-columns:52px minmax(0,1fr) 56px 64px;font-size:13px}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="./src/main.tsx"></script>
+</body>
+</html>

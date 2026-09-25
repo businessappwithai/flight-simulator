@@ -1,0 +1,6 @@
+import {expect,test} from "bun:test";
+import {BEST_PRACTICE_FEATURES,encodeFeatures,TrainingBuffer,BestPracticeModelRegistry,summarizeShadow} from "@flight/experience";
+test("feature order is stable",()=>{const x:any=Object.fromEntries(BEST_PRACTICE_FEATURES.map((k,i)=>[k,i]));expect(encodeFeatures(x)).toEqual(BEST_PRACTICE_FEATURES.map((_,i)=>i))});
+test("training buffer is bounded",()=>{const b=new TrainingBuffer(2,2);for(let i=0;i<10;i++)b.add({features:[i],action:"HOLD",reward:1,regret:0,success:true,safetyOverride:false,catastrophic:false});expect(b.size).toBe(2)});
+test("registry atomically changes active model",()=>{const r=new BestPracticeModelRegistry();const mk=(id:string)=>({id,schemaVersion:"v",datasetHash:id,createdAt:"x",state:"CANDIDATE" as const});r.register(mk("a"));r.register(mk("b"));const e={validationExamples:1000,accuracy:.9,baselineAccuracy:.8,hardRegressions:0,catastrophicFalsePositiveRate:0};r.promote("a",e);r.promote("b",e);expect(r.active?.id).toBe("b");expect(r.get("a")?.state).toBe("RETIRED")});
+test("shadow summary",()=>expect(summarizeShadow([{recommended:"CLIMB",executed:"CLIMB",recommendedProbability:.9,actualSuccess:true,catastrophic:false}]).agreementRate).toBe(1));
