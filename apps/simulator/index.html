@@ -1,1 +1,80 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Flight World</title><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden}canvas{display:block}</style></head><body><div id="app"></div><script type="module" src="./src/main.ts"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Flight World</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Cpath d=%27M8 1l1.4 5.2L15 8l-5.6 1.2L8 15l-1.4-5.8L1 8l5.6-1.8z%27 fill=%27%23f5a623%27/%3E%3C/svg%3E">
+<style>
+:root{--panel:rgba(12,16,22,.72);--line:rgba(255,255,255,.14);--text:#eef3f8;--muted:#9fb0c2;--accent:#f5a623;--ok:#3ddc84;--bad:#ff5a52;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text)}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0b1118}
+#app{position:fixed;inset:0}canvas#view{display:block;width:100%;height:100%;touch-action:none}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#top{position:fixed;top:10px;left:10px;right:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;pointer-events:none}
+#top>*{pointer-events:auto}
+.chip{padding:6px 10px;font-size:12px;line-height:1.2;white-space:nowrap}.chip b{font-weight:650}
+.chip .k{color:var(--muted);margin-right:4px}
+#phase.OUTBOUND,#phase.RETURN{color:#9fd3ff}#phase.COMPLETE{color:var(--ok)}#phase.FAILED{color:var(--bad)}
+.spacer{flex:1}
+button{font:inherit;font-size:12px;color:var(--text);background:rgba(30,40,54,.85);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:6px 10px;cursor:pointer}
+button:hover{background:rgba(48,62,82,.95)}button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
+#panel{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);width:min(560px,calc(100vw - 20px));height:min(300px,40vh);padding:6px}
+#panel canvas{width:100%;height:100%;display:block}
+#map{position:fixed;right:10px;bottom:10px;width:220px;height:220px;padding:6px}
+#map canvas{width:100%;height:100%;display:block;border-radius:6px}
+#readout{position:fixed;left:10px;bottom:10px;padding:10px 12px;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;min-width:180px}
+#readout .k{color:var(--muted);display:inline-block;width:72px}
+#banner{position:fixed;top:22%;left:50%;transform:translateX(-50%);padding:14px 22px;font-size:20px;font-weight:700;text-align:center;display:none;max-width:calc(100vw - 30px)}
+#banner small{display:block;font-size:13px;font-weight:400;color:var(--muted);margin-top:4px}
+#banner.show{display:block}
+#help{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45)}
+#help.show{display:flex}#help .panel{padding:18px 22px;max-width:520px;font-size:13px;line-height:1.7}
+#help kbd{display:inline-block;min-width:22px;padding:1px 6px;border:1px solid #556;border-bottom-width:2px;border-radius:4px;background:#1c2330;font:12px ui-monospace,monospace;text-align:center}
+#error{position:fixed;left:50%;top:70px;transform:translateX(-50%);padding:10px 14px;color:#ffd7d4;border-color:rgba(255,90,82,.6);display:none;max-width:calc(100vw - 20px);font-size:13px}
+#error.show{display:block}
+#pad{position:fixed;left:10px;bottom:170px;display:none;grid-template-columns:repeat(3,48px);gap:6px}
+#pad button{height:44px;font-size:16px}
+@media (pointer:coarse){#pad{display:grid}}
+@media (max-width:760px){.opt{display:none}#top{gap:6px}button{padding:5px 8px}#map{width:120px;height:120px;bottom:calc(34vh + 20px)}#readout{display:none}#panel{height:34vh}#pad{bottom:calc(34vh + 20px)}#banner{top:30%}}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="app"><canvas id="view" aria-label="3D flight view"></canvas></div>
+<div id="top">
+  <div class="chip panel opt"><b>FLIGHT WORLD</b></div>
+  <div class="chip panel"><span class="k">MISSION</span><b id="phase">—</b></div>
+  <div class="chip panel"><span class="k">PILOT</span><b id="pilotLabel">AUTOPILOT</b> <span id="apMode" class="k"></span></div>
+  <div class="chip panel opt"><span class="k">CAM</span><b id="camLabel">CHASE</b></div>
+  <div class="chip panel opt"><span class="k">SCENARIO</span><b id="scenario">—</b></div>
+  <div class="chip panel"><span class="k">T</span><b id="simTime">0.0 s</b> <span class="k" id="rate">×1</span></div>
+  <div class="spacer"></div>
+  <button id="btnPilot" aria-pressed="true" title="A">Autopilot</button>
+  <button id="btnCam" title="C">Camera</button>
+  <button id="btnPause" title="P / Space">Pause</button>
+  <button id="btnReset" title="R">Restart</button>
+  <button id="btnNew" title="N">New scenario</button>
+  <button id="btnPanel" aria-pressed="true" title="I">Instruments</button>
+  <button id="btnHelp" title="H">?</button>
+</div>
+<div id="error" class="panel" role="alert"></div>
+<div id="banner" class="panel" role="status"></div>
+<div id="readout" class="panel"></div>
+<div id="panel" class="panel"><canvas id="sixpack" aria-label="Flight instruments"></canvas></div>
+<div id="map" class="panel"><canvas id="minimap" aria-label="Moving map"></canvas></div>
+<div id="pad" aria-label="Touch controls">
+  <span></span><button data-intent="CLIMB" aria-label="Climb">▲</button><span></span>
+  <button data-intent="TURN_LEFT" aria-label="Turn left">◀</button><button data-intent="SLOW" aria-label="Slow">■</button><button data-intent="TURN_RIGHT" aria-label="Turn right">▶</button>
+  <span></span><button data-intent="DESCEND" aria-label="Descend">▼</button><span></span>
+</div>
+<div id="help"><div class="panel">
+  <b>Controls</b><br>
+  <kbd>A</kbd> autopilot on/off — the autopilot takes off, flies through the gate and lands.<br>
+  Manual (any flight key disengages the autopilot): <kbd>W</kbd>/<kbd>↑</kbd> climb · <kbd>S</kbd>/<kbd>↓</kbd> descend · <kbd>←</kbd>/<kbd>Q</kbd> turn left · <kbd>→</kbd>/<kbd>E</kbd> turn right · <kbd>Shift</kbd> slow · <kbd>X</kbd> abort (hold keys; release = hold altitude)<br>
+  <kbd>C</kbd> cycle camera · <kbd>1</kbd>–<kbd>4</kbd> chase / cockpit / orbit (drag) / tower<br>
+  <kbd>P</kbd> or <kbd>Space</kbd> pause · <kbd>+</kbd>/<kbd>-</kbd> time rate · <kbd>R</kbd> restart · <kbd>N</kbd> new seeded scenario · <kbd>I</kbd> instruments · <kbd>H</kbd> this help<br>
+  <span style="color:var(--muted)">Fly through the orange gate, then land back on runway 18. The balloon is the moving obstacle.</span>
+</div></div>
+<script type="module" src="./src/main.ts"></script>
+</body>
+</html>

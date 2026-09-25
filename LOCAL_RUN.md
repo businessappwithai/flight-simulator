@@ -11,11 +11,14 @@ bun run audit:deps
 bun run research:manifest --id=baseline --seeds=100
 ```
 
-The Three.js shell can then be started with:
+The 3D simulator (Three.js, simulation in a Web Worker) starts with:
 
 ```bash
-bun run simulator
+bun run simulator          # http://localhost:3200, or: bun apps/simulator/serve.ts --port 8080
+bun run simulator:build    # static files in dist/simulator
 ```
+
+The Control Room (decision replay/explanations) runs with `bun apps/inspector/index.html`.
 
 The TypeSafe Jev and Open-Jev packages intentionally expose transport interfaces. Bind those transports to the exact API/runtime you deploy rather than embedding an assumed external API contract in the simulation core.
 

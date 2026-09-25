@@ -23,8 +23,35 @@ Run:
 ```bash
 bun install
 bun test
-bun run benchmark
+bun run benchmark          # reference autopilot over 100 seed-varied scenarios
+bun run simulator          # 3D simulator at http://localhost:3200 (bun apps/simulator/serve.ts)
+bun run simulator:build    # static build in dist/simulator (host anywhere; worker ships as sim.worker.js)
+bun run research           # R-series research CLI
 ```
+
+## 3D simulator (apps/simulator)
+
+A desktop-flight-sim style view of the deterministic simulation, rendered with Three.js; the physics runs in a
+Web Worker and the page only renders snapshots and sends pilot commands.
+
+- Scenery generated in code: atmospheric sky and sun, haze, patchwork farmland, forests, farms, a lake and river,
+  hills and snow-capped mountains beyond the flying area (the physics ground is flat inside it, so nothing you see
+  contradicts the collision model), clouds, and an airfield with a marked runway 18/36, taxiway, apron, hangars,
+  tower, windsock and edge lights.
+- Procedural high-wing aircraft whose ailerons, elevator, rudder and propeller follow the controls the simulation
+  actually applied; nav, strobe and beacon lights. The obstacle is a hot-air balloon of the simulated radius;
+  the checkpoint is an air-race gate that turns green once passed.
+- Cameras: chase, cockpit (panel and windshield), free orbit (drag), tower. Six-pack instruments (airspeed,
+  attitude, altimeter, turn coordinator, heading, vertical speed), a north-up moving map and a data readout.
+- Pilots: the reference autopilot (takes off, flies the gate, pattern, glide path, lands) or manual intents from the
+  keyboard or an on-screen pad on touch devices. Time acceleration ×0.5–×8, pause, restart, new seeded scenario.
+- URL options: `?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0`. Invalid values
+  fall back to defaults. Adaptive quality drops shadows, then resolution, when the frame rate stays low.
+- Keys: `A` autopilot · `W/S/←/→/Q/E/Shift/X` manual · `C`,`1`–`4` cameras · `P`/Space pause · `+`/`-` rate ·
+  `R` restart · `N` new scenario · `I` instruments · `H` help.
+
+The simulation shown is the same deterministic simulation used for benchmarks: `tests/simulator-worker.test.ts`
+checks that a mission flown through the worker ends with exactly the checksum of a direct headless run.
 
 The AI layer never emits raw control surfaces. The deterministic controller owns low-level controls.
 
