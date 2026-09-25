@@ -5,7 +5,7 @@ import {ReplayController} from "./replay-controller.ts";
 import {watchdog} from "./watchdog.ts";
 import {explanationIntegrity} from "./explanation-integrity.ts";
 let model=new LiveDashboardModel();const telemetry=new TelemetryBuffer();let paused=false,pinned:string|undefined;
-const replay=new ReplayController(e=>showEvent(e));
+const replay=new ReplayController(e=>showEvent(e),s=>{$("replayPlay").textContent=s==="PLAYING"?"Pause replay":s==="DONE"?"Replay again":"Play";$("mode").textContent=`● REPLAY ${s==="DONE"?"(end)":s.toLowerCase()}`});
 const $=(id:string)=>document.getElementById(id)!;
 // Telemetry (live or loaded from a replay file) is untrusted: build nodes with textContent, never innerHTML.
 const el=(tag:string,cls:string,...kids:(Node|string)[])=>{const x=document.createElement(tag);if(cls)x.className=cls;x.append(...kids);return x};const pct=(x:number)=>(x*100).toFixed(1)+"%";
@@ -31,4 +31,4 @@ window.addEventListener("message",e=>{if(e.origin!==location.origin)return;if(e.
 $("loadReplay").onclick=()=>($("replayFile") as HTMLInputElement).click();
 ($("replayFile") as HTMLInputElement).onchange=async e=>{const f=(e.target as HTMLInputElement).files?.[0];if(f){replay.loadJsonl(await f.text());model=new LiveDashboardModel();telemetry.clear();pinned=undefined;$("follow").textContent="Following latest";render();$("status").textContent=`replay loaded: ${replay.position.total} events`}(e.target as HTMLInputElement).value=""};
 $("replayStep").onclick=()=>replay.step();
-$("replayPlay").onclick=()=>{if(replay.state==="PLAYING"){replay.pause();$("replayPlay").textContent="Play"}else{replay.play(100);$("replayPlay").textContent="Pause replay"}};
+$("replayPlay").onclick=()=>{if(replay.state==="IDLE")return;if(replay.state==="PLAYING")replay.pause();else replay.play(100)};
