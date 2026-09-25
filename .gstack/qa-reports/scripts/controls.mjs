@@ -5,7 +5,8 @@ const b=await chromium.launch({executablePath:"/opt/pw-browsers/chromium-1194/ch
 const results=[];const check=(area,control,ok,detail="")=>{results.push({area,control,ok:!!ok,detail});console.log(`${ok?"PASS":"FAIL"}  ${area} · ${control}${detail?`  — ${detail}`:""}`)};
 async function page(url){const ctx=await b.newContext({viewport:{width:1180,height:820},hasTouch:true,acceptDownloads:true});const p=await ctx.newPage();p.errs=[];p.dialogs=[];
  p.on("console",m=>{if(m.type()==="error")p.errs.push(m.text().slice(0,160))});p.on("pageerror",e=>p.errs.push("uncaught: "+e.message));p.on("dialog",d=>{p.dialogs.push(d.message());d.dismiss()});await p.goto(url);return p}
-const W=p=>p.evaluate(()=>{const w=flightSim.world,a=w.aircraft;return {t:Number(w.tick)/120,phase:w.objective.phase,y:a.position.y,vy:a.velocity.y,hdg:a.heading,spd:Math.hypot(a.velocity.x,a.velocity.y,a.velocity.z),pilot:flightSim.pilot,cam:flightSim.camera,paused:flightSim.paused}});
+// After a restart the page has no snapshot until the worker replies: wait for one instead of reading undefined.
+const W=async p=>{await p.waitForFunction(()=>!!globalThis.flightSim?.world,null,{timeout:60000});return p.evaluate(()=>{const w=flightSim.world,a=w.aircraft;return {t:Number(w.tick)/120,phase:w.objective.phase,y:a.position.y,vy:a.velocity.y,hdg:a.heading,spd:Math.hypot(a.velocity.x,a.velocity.y,a.velocity.z),pilot:flightSim.pilot,cam:flightSim.camera,paused:flightSim.paused}})};
 // React commits on the next animation frame: wait two frames before reading the DOM after any interaction.
 const settle=p=>p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r()))));
 const txt=async(p,s)=>{await settle(p);return p.locator(s).first().innerText()};

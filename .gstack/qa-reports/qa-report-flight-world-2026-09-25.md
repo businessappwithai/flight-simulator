@@ -139,6 +139,29 @@ Also deferred:
 ![Landed — tower view](screenshots/sim-landed-tower.png)
 ![Phone](screenshots/sim-phone.png)
 
+## Follow-up 2: React / R3F presentation boundary, iPad QA, controls matrix
+
+**Architecture.** React, React Three Fiber and Three.js now exist only in `apps/simulator` and `apps/control-room`. Presentation code imports only `@flight/protocol`, and the simulation worker is the only simulator file that runs the core. Enforced in CI by `scripts/dependency-audit.ts` and proven by `tests/dependency-boundary.test.ts`.
+
+**Determinism across the port.** The takeoff-to-landing mission ends with the same checksum (`6ed8b5b53b`) before and after the R3F rewrite.
+
+**iPad layout** (Chromium with touch at 768×1024, 820×1180, 1024×768, 1180×820 and 1366×1024): no horizontal scroll and no overlapping panels in either app. The touch yoke works on every size. On iPad Pro at 2×, both adaptive-quality steps fired (shadows off, then lower resolution) and the view kept rendering.
+
+**Controls matrix** (`scripts/controls.mjs`; every control's effect is asserted):
+- Control Room **18/18**: live bridge, pause UI, export, load, step, play/pause, replay again (no double counting), back to live, follow/pin, strip ticks, timeline rows, all tabs, alerts and watchdog, invalid replay file.
+- Simulator **35/35**: autopilot, camera (button, C, 1–4), pause (button, P, Space), rate (buttons, + and −), instruments, help (button, H, Esc, backdrop), all 5 touch-yoke directions, all 10 flight keys, orbit drag, restart, new scenario (button, N, R); 0 console errors.
+
+Bugs found by this pass and fixed:
+
+| Issue | Fix |
+|---|---|
+| Touch yoke did nothing when `setPointerCapture` threw (interrupted gestures) | Take manual control first; pointer capture is best-effort |
+| Releasing a turn spiralled the aircraft into the ground (HOLD kept the bank and dived when above 70 m) | Sensors report attitude; stabilised intents (level wings, hold height, bounded vertical speed); `tests/intent-controller.test.ts` |
+| SLOW never slowed (throttle 0.35 → ~119 m/s steady speed, above the 90 m/s cap) | Throttle 0.14 (~48 m/s); regression test |
+| "Replay again" would double count; 0 % "alternatives" were listed as evidence | Clean slate on replay; only real alternatives listed |
+
+Flight screenshots (takeoff to landing, iPad Air landscape): `screenshots/r3f/flight-01…14-*.png`. Layouts: `screenshots/r3f/sim-ipad-*.png` and `room-ipad-*.png`.
+
 ## How to reproduce
 
 ```bash
