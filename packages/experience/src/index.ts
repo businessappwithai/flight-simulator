@@ -59,10 +59,11 @@ export type { ExperienceQuality, ExperienceStats, ExperienceBranch, NegativeMemo
 export { InMemoryTreeIndex } from "./tree-index.ts";
 export type { FastTreeIndex, TreeTrainingRow } from "./tree-index.ts";
 
-export { ACTIONS, actionIndex, trainingWeight } from "./best-practice.ts";
-export type { BestPracticeExample, BestPracticePrediction } from "./best-practice.ts";
+export { ACTIONS, actionIndex, trainingWeight, OUTCOME_MODEL_FORMAT, outcomeLabel, outcomeRow, buildOutcomeDataset, candidateRows, rankOutcomes } from "./best-practice.ts";
+export type { BestPracticeExample, BestPracticePrediction, OutcomeDataset } from "./best-practice.ts";
 
 export { XGBoostBestPracticeClient } from "./xgboost-client.ts";
+export type { TrainedModel } from "./xgboost-client.ts";
 
 export { promoteBestPracticeModel } from "./model-promotion.ts";
 export type { BestPracticeEvidence } from "./model-promotion.ts";
