@@ -14,7 +14,7 @@ export class LiveDashboardModel{
    const candidates=(t.candidates??f.candidates??[{intent:f.requestedIntent,probability:f.probability}]).filter((x:any)=>x?.intent) as {intent:string;probability:number}[];
    const id=String(t.decisionId??f.id??`decision-${this.#order.length+1}`),requested=String(t.requested??f.requestedIntent??candidates[0]?.intent??"UNKNOWN"),executed=String(t.executed??f.executedIntent??requested);
    const confidence=Number(candidates[0]?.probability??f.probability??0),disagreement=Number(t.providerDisagreement??0);
-   this.#decisions.set(id,{decisionId:id,requested,executed,provider:String(t.provider??f.provider??"unknown"),model:String(t.model??"decision-engine"),confidence,alternatives:candidates.slice(0,5),temporalPatterns:[...(t.temporalPatterns??[])],experienceIds:[...(t.retrievedExperienceIds??[])],disagreement,safetyReason:t.safetyReason,outcomes:{...(f.outcome??{})},startTick:f.startTick!==undefined?String(f.startTick):undefined});
+   this.#decisions.set(id,{decisionId:id,requested,executed,provider:String(t.provider??f.provider??"unknown"),model:String(t.model??"unknown"),confidence,alternatives:candidates.slice(0,5),temporalPatterns:[...(t.temporalPatterns??[])],experienceIds:[...(t.retrievedExperienceIds??[])],disagreement,safetyReason:t.safetyReason,outcomes:{...(f.outcome??{})},startTick:f.startTick!==undefined?String(f.startTick):undefined});
    this.#order.push(id);this.#confidence+=confidence;if(disagreement>.25)this.#disagreements++;
   } else if(e.type==="SAFETY_OVERRIDE"){this.#overrides++;const d=this.#decisions.get(e.decisionId);if(d){d.executed=e.executed;d.safetyReason=e.reason}}
   else if(e.type==="OUTCOME"){const d=this.#decisions.get(e.decisionId);if(d)d.outcomes[e.horizon]=e.reward}
