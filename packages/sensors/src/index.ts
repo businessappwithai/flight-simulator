@@ -9,6 +9,6 @@ export class PerfectSensorSuite {
    const dx=obstacle.position.x-a.position.x,dz=obstacle.position.z-a.position.z;
    nearestObstacle={distance:Math.hypot(dx,obstacle.position.y-a.position.y,dz),bearing:wrap(Math.atan2(dx,dz)-a.heading)};
   }
-  return {tick:w.tick,speed,altitude:a.position.y,heading:a.heading,objectivePhase:w.objective.phase,nearestObstacle};
+  return {tick:w.tick,speed,altitude:a.position.y,heading:a.heading,objectivePhase:w.objective.phase,nearestObstacle,attitude:{pitch:a.pitch,roll:a.roll,verticalSpeed:a.velocity.y}};
  }
 }

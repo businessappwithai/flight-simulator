@@ -59,6 +59,12 @@ export interface Observation {
     readonly distance: number;
     readonly bearing: number;
   };
+  /** Aircraft attitude (radians) and vertical speed (m/s); lets the controller stabilise intents. */
+  readonly attitude?: {
+    readonly pitch: number;
+    readonly roll: number;
+    readonly verticalSpeed: number;
+  };
 }
 
 export type PilotIntent =

@@ -18,7 +18,7 @@ test("worker autopilot lands and matches a direct deterministic run bit for bit"
 test("seeded scenario selection reaches the worker",async()=>{const {last,chk}=await fly("seeded","33"),ref=await direct(scenarioForSeed(33n));expect(last.scenarioId).toBe("seeded-33");expect(chk.checksum).toBe(ref.chk)},30_000);
 test("manual intents fly the aircraft and pause freezes time",async()=>{const {w,inbox,next}=worker();try{
  w.postMessage({type:"RESET",seed:"1"});await next("WORLD");w.postMessage({type:"SET_PILOT",pilot:"MANUAL"});w.postMessage({type:"SET_INTENT",intent:"CLIMB"});
- let from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:1});const a=await next("WORLD",from);expect(a.pilot).toBe("MANUAL");expect(a.intent).toBe("CLIMB");expect(a.world.aircraft.position.y).toBeGreaterThan(5);expect(a.controls.elevator).toBeGreaterThan(0);
+ let from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:1});const a=await next("WORLD",from);expect(a.pilot).toBe("MANUAL");expect(a.intent).toBe("CLIMB");expect(a.world.aircraft.position.y).toBeGreaterThan(5);expect(a.world.aircraft.velocity.y).toBeGreaterThan(3);
  w.postMessage({type:"PAUSE"});from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:2});const b=await next("WORLD",from+1);expect(b.paused).toBe(true);expect(b.world.tick).toBe(a.world.tick);
 }finally{w.terminate()}});
 test("bad commands are rejected with ERROR and do not break the worker",async()=>{const {w,inbox,next}=worker();try{
