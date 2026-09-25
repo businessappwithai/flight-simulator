@@ -22,5 +22,5 @@ onmessage=async({data}:MessageEvent<Msg>)=>{
    postMessage({type:"PREDICTION",requestId:data.requestId,version,ranked});return;
   }
   dispose();postMessage({type:"DISPOSED"});
- }catch(e){postMessage({type:"ERROR",message:e instanceof Error?e.message:String(e)})}
+ }catch(e){postMessage({type:"ERROR",requestId:data.type==="PREDICT"?data.requestId:undefined,message:e instanceof Error?e.message:String(e)})}
 };
