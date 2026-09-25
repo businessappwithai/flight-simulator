@@ -15,7 +15,7 @@ const score = (f: DecisionFrame): number => {
 
 export class NoMemoryStrategy implements TemporalStrategy {
   readonly name = "NONE" as const;
-  summarize(): TemporalSummary {
+  summarize(_frames?: readonly DecisionFrame[]): TemporalSummary {
     return { strategy: this.name, recentActions: [], effectiveActions: [], ineffectiveActions: [] };
   }
 }

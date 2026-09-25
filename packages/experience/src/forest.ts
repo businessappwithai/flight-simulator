@@ -21,8 +21,8 @@ export class ExperienceForest{
  #roots=new Map<string,Map<PilotIntent,ExperienceBranch>>();
  #negative=new Map<string,NegativeMemory>();
  observe(fingerprint:string,sequence:readonly PilotIntent[],outcome:{success:boolean;reward?:RewardVector;regret:number;safetyOverride:boolean;catastrophic?:boolean}){
-  if(!sequence.length)return;let level=this.#roots.get(fingerprint);if(!level){level=new Map();this.#roots.set(fingerprint,level)}
-  for(let i=0;i<sequence.length;i++){const action=sequence[i]!;let n=level.get(action);
+  if(!sequence.length)return;let level:Map<PilotIntent,ExperienceBranch>|undefined=this.#roots.get(fingerprint);if(!level){level=new Map();this.#roots.set(fingerprint,level)}
+  for(let i=0;i<sequence.length;i++){const action=sequence[i]!;let n:ExperienceBranch|undefined=level.get(action);
    if(!n){n={id:`${fingerprint}:${i}:${action}`,fingerprint,action,quality:"UNCERTAIN",stats:{visits:0,successes:0,failures:0,safetyOverrides:0,rewardSum:0,regretSum:0},children:new Map()};level.set(action,n)}
    n.stats.visits++;outcome.success?n.stats.successes++:n.stats.failures++;if(outcome.safetyOverride)n.stats.safetyOverrides++;
    n.stats.rewardSum+=scalar(outcome.reward);n.stats.regretSum+=outcome.regret;n.quality=classifyExperience(n.stats,!!outcome.catastrophic);

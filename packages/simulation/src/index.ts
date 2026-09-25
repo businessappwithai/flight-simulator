@@ -176,7 +176,7 @@ export class DeterministicSimulation {
   restore(s: SimulationSnapshot): void {
     this.clock.restore(s.tick);
     this.#aircraft = structuredClone(s.aircraft);
-    this.#entities = structuredClone(s.entities);
+    this.#entities = [...structuredClone(s.entities)];
     this.#objective = structuredClone(s.objective);
     this.#rng.restore(s.random);
   }

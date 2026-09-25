@@ -13,7 +13,7 @@ onmessage=async({data}:MessageEvent<Msg>)=>{
    const rows=data.examples.filter(x=>actionIndex(x.action)>=0);
    const X=rows.map(x=>[...x.features]),y=rows.map(x=>actionIndex(x.action)),sampleWeight=rows.map(trainingWeight);
    next.fit(X,y,{sampleWeight});const bytes=next.save();dispose();model=next;version=data.version;
-   postMessage({type:"TRAINED",version,bytes},[bytes.buffer]);return;
+   postMessage({type:"TRAINED",version,bytes},{transfer:[bytes.buffer]});return;
   }
   if(data.type==="LOAD"){const next=await XGBModel.load(data.bytes);dispose();model=next;version=data.version;postMessage({type:"LOADED",version});return}
   if(data.type==="PREDICT"){

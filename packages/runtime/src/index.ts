@@ -1,4 +1,4 @@
-import type { DecisionFrame, WorldSnapshot } from "@flight/protocol";
+import type { DecisionFrame, PilotIntent, WorldSnapshot } from "@flight/protocol";
 import { DeterministicSimulation, type Scenario } from "@flight/simulation";
 import { PerfectSensorSuite } from "@flight/sensors";
 import { IntentController } from "@flight/controller";
@@ -15,7 +15,7 @@ export class FlightRuntime {
  constructor(readonly pilot:CognitivePilot,readonly experience:ExperienceRepository){}
  async run(scenario:Scenario,maxTicks=120*60):Promise<EpisodeResult>{
   let world=this.sim.reset(scenario); const decisions:DecisionFrame[]=[];
-  let active={intent:"HOLD" as const,until:0}; let current:any;
+  let active:{intent:PilotIntent;until:number}={intent:"HOLD",until:0}; let current:any;
   for(let i=0;i<maxTicks;i++){
    if(i>=active.until){
     const obs=this.sensors.observe(world);
