@@ -13,7 +13,8 @@ export type { FailurePredicate } from "./minimize.ts";
 export { nextCurriculumLevel } from "./curriculum.ts";
 export type { CurriculumLevel, CurriculumResult } from "./curriculum.ts";
 
-export { hillSearch, disagreementObjective, worldModelErrorObjective, skillBoundaryObjective } from "./search.ts";
+export { searchScenarios, disagreementObjective, worldModelErrorObjective, skillBoundaryObjective } from "./search.ts";
+export type { SearchCandidate, ScenarioMutator, ScenarioScorer } from "./search.ts";
 
 export { ddmin } from "./ddmin.ts";
 export type { Feature } from "./ddmin.ts";
