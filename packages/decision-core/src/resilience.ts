@@ -1,4 +1,4 @@
-import type { DecisionEngine, DecisionRequest, DecisionResponse } from "./index.ts";
+import type { DecisionEngine, DecisionEngineHealth, DecisionRequest, DecisionResponse } from "./index.ts";
 export interface CircuitState{failures:number;openUntil:number}
 export class ResilientDecisionEngine implements DecisionEngine{
  readonly identity;
@@ -11,4 +11,5 @@ export class ResilientDecisionEngine implements DecisionEngine{
    return this.fallback.decide(r);
   }
  }
+ async health():Promise<DecisionEngineHealth>{if(Date.now()<this.#state.openUntil)return {healthy:false,detail:`circuit open after ${this.#state.failures} failures; using fallback ${this.fallback.identity.provider}`};return this.primary.health()}
 }
