@@ -10,7 +10,7 @@ export class LiveDashboardModel{
  #decisions=new Map<string,DecisionWhy>();#order:string[]=[];#episodes=0;#overrides=0;#disagreements=0;#confidence=0;
  ingest(e:RuntimeEvent){
   if(e.type==="DECISION"){
-   const f:any=e.frame,t:any=f.trace??{};
+   const f:any=e.frame,t:any=f.trace??f; // canonical DecisionFrame, frame.trace, or flat trace-shaped frame
    const candidates=(t.candidates??f.candidates??[{intent:f.requestedIntent,probability:f.probability}]).filter((x:any)=>x?.intent) as {intent:string;probability:number}[];
    const id=String(t.decisionId??f.id??`decision-${this.#order.length+1}`),requested=String(t.requested??f.requestedIntent??candidates[0]?.intent??"UNKNOWN"),executed=String(t.executed??f.executedIntent??requested);
    const confidence=Number(candidates[0]?.probability??f.probability??0),disagreement=Number(t.providerDisagreement??0);
