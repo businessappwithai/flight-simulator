@@ -51,4 +51,4 @@ export { checkWorldInvariants } from "./invariants.ts";
 export type { InvariantViolation } from "./invariants.ts";
 
 export { DEFAULT_BUDGETS, budgetViolations } from "./budgets.ts";
-export type { RuntimeBudgets, TimingSample } from "./budgets.ts";
+export type { RuntimeBudgets, Subsystem, TimingSample } from "./budgets.ts";
