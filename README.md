@@ -31,8 +31,13 @@ bun run research           # R-series research CLI
 
 ## 3D simulator (apps/simulator)
 
-A desktop-flight-sim style view of the deterministic simulation, rendered with Three.js; the physics runs in a
-Web Worker and the page only renders snapshots and sends pilot commands.
+A desktop-flight-sim style view of the deterministic simulation, built with React + React Three Fiber + Three.js;
+the physics runs in a Web Worker and the page only renders `@flight/protocol` snapshots and sends pilot commands.
+React/R3F/Three.js are confined to `apps/` — see *Presentation boundary* in ARCHITECTURE.md (enforced in CI).
+Laid out for iPad and larger (portrait and landscape) with an on-screen yoke on touch devices; also usable on phones.
+
+Control Room (React): `bun run control-room` → http://localhost:3100 — replay recorded JSONL telemetry, step or
+play it, and inspect each decision in the "Why?" card.
 
 - Scenery generated in code: atmospheric sky and sun, haze, patchwork farmland, forests, farms, a lake and river,
   hills and snow-capped mountains beyond the flying area (the physics ground is flat inside it, so nothing you see
