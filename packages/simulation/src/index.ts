@@ -195,6 +195,24 @@ export class DeterministicSimulation {
   }
 }
 
+/**
+ * Seed-varied scenario for benchmarks: checkpoint placement and obstacle track are drawn from the seed
+ * (defaultScenario keeps fixed geometry so golden checksums stay stable). Same seed → same scenario.
+ */
+export function scenarioForSeed(seed: bigint): Scenario {
+  const r = new SplitMix64(seed ^ 0x5eed5ce4a410n), u = (a: number, b: number) => a + (b - a) * r.nextFloat();
+  const checkpoint = { x: u(-180, 180), y: u(60, 120), z: u(450, 850) };
+  const side = r.nextFloat() < .5 ? -1 : 1, speed = u(6, 22);
+  return {
+    id: `seeded-${seed}`,
+    seed,
+    aircraftStart: { x: 0, y: 2, z: 0 },
+    checkpoint,
+    obstacleStart: { x: -side * u(90, 220), y: u(50, 110), z: u(220, 420) },
+    obstacleVelocity: { x: side * speed, y: 0, z: u(-3, 3) }
+  };
+}
+
 export const defaultScenario = (seed: bigint): Scenario => ({
   id: "moving-obstacle-001",
   seed,

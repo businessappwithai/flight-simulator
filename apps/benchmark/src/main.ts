@@ -1,35 +1,14 @@
-import type { AircraftControls, WorldSnapshot } from "@flight/protocol";
-import { DeterministicSimulation, defaultScenario } from "@flight/simulation";
+import { DeterministicSimulation, scenarioForSeed } from "@flight/simulation";
+import { autopilotControls as autopilot } from "@flight/controller";
 import { FlightRecorder } from "@flight/recorder";
-
-function autopilot(world: WorldSnapshot): AircraftControls {
-  const a = world.aircraft;
-  const phase = world.objective.phase;
-  const checkpoint = world.entities.find(e => e.kind === "CHECKPOINT")!;
-  const runway = world.entities.find(e => e.kind === "RUNWAY")!;
-  const target = phase === "OUTBOUND" ? checkpoint.position : runway.position;
-
-  const dx = target.x - a.position.x;
-  const dz = target.z - a.position.z;
-  const targetHeading = Math.atan2(dx, dz);
-  let error = targetHeading - a.heading;
-  while (error > Math.PI) error -= Math.PI * 2;
-  while (error < -Math.PI) error += Math.PI * 2;
-
-  const targetAlt = phase === "RETURN" && Math.hypot(dx,dz) < 120 ? 2 : 85;
-  const elevator = Math.max(-1, Math.min(1, (targetAlt - a.position.y) * 0.025 - a.pitch * 1.2));
-  const aileron = Math.max(-1, Math.min(1, error * 1.8 - a.roll * 1.1));
-
-  return { aileron, elevator, rudder: aileron * 0.15, throttle: phase === "RETURN" && Math.hypot(dx,dz) < 100 ? 0.2 : 0.78 };
-}
 
 async function run(seed: bigint) {
   const sim = new DeterministicSimulation();
-  const scenario = defaultScenario(seed);
+  const scenario = scenarioForSeed(seed);
   let world = sim.reset(scenario);
   const recorder = new FlightRecorder();
 
-  for (let i = 0; i < 120 * 90; i++) {
+  for (let i = 0; i < 120 * 180; i++) { // 3 simulated minutes: takeoff, checkpoint, pattern and landing
     const controls = autopilot(world);
     recorder.record(sim.tick, controls);
     world = sim.step(controls);
@@ -47,10 +26,15 @@ async function run(seed: bigint) {
 }
 
 const count = Number(Bun.argv[2] ?? "100");
-let complete = 0, failed = 0;
+let complete = 0, failed = 0, timeout = 0;
+const seconds: number[] = [], failures: string[] = [];
 for (let i = 1; i <= count; i++) {
   const r = await run(BigInt(i));
-  if (r.outcome === "COMPLETE") complete++;
-  if (r.outcome === "FAILED") failed++;
+  if (r.outcome === "COMPLETE") { complete++; seconds.push(Number(r.ticks) / 120); }
+  else if (r.outcome === "FAILED") { failed++; failures.push(`seed ${i}`); }
+  else { timeout++; failures.push(`seed ${i} (timeout)`); }
 }
-console.log(JSON.stringify({ scenarios: count, complete, failed }, null, 2));
+seconds.sort((a, b) => a - b);
+console.log(JSON.stringify({ scenarios: count, complete, failed, timeout,
+  flightSeconds: seconds.length ? { min: seconds[0], median: seconds[Math.floor(seconds.length / 2)], max: seconds.at(-1) } : null,
+  failures: failures.slice(0, 20) }, null, 2));

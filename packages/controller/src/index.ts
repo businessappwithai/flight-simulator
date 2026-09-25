@@ -12,3 +12,6 @@ export class IntentController {
   return {...base,elevator:clamp((70-o.altitude)*.015)};
  }
 }
+
+export { autopilotControls, autopilotTarget, DEFAULT_AUTOPILOT } from "./autopilot.ts";
+export type { AutopilotTarget, AutopilotTuning } from "./autopilot.ts";
