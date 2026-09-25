@@ -50,7 +50,9 @@ const PAD:[PilotIntent|null,string,string][]=[[null,"",""],["CLIMB","▲","Climb
 /** On-screen yoke for touch devices (iPad): hold a direction, release to hold altitude. */
 export function TouchPad({store}:{store:SimStore}){
  return <div className="pad" aria-label="Touch flight controls">{PAD.map(([i,glyph,label],k)=>i?
-  <button key={k} aria-label={label} data-intent={i} onPointerDown={e=>{e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);store.manual(i)}} onPointerUp={()=>store.setIntent("HOLD")} onPointerCancel={()=>store.setIntent("HOLD")}>{glyph}</button>:<span key={k}/>)}</div>;
+  <button key={k} aria-label={label} data-intent={i} onPointerDown={e=>{e.preventDefault();store.manual(i);
+   // Capture is best-effort: it throws for pointers the browser no longer tracks (interrupted gestures).
+   try{e.currentTarget.setPointerCapture(e.pointerId)}catch{/* release still arrives via pointerup/pointercancel on the button */}}} onPointerUp={()=>store.setIntent("HOLD")} onPointerCancel={()=>store.setIntent("HOLD")}>{glyph}</button>:<span key={k}/>)}</div>;
 }
 export function Banner({hud}:{hud:HudState}){if(!hud.banner)return null;return <div className="banner panel" role="status"><div>{hud.banner.title}</div>{hud.banner.detail&&<small>{hud.banner.detail}</small>}</div>}
 export function ErrorBox({hud}:{hud:HudState}){if(!hud.error)return null;return <div className="error panel" role="alert">{hud.error}</div>}

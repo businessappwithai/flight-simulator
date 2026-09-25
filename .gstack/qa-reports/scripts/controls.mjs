@@ -26,7 +26,8 @@ if(what==="sim"||what==="all"){
  await p.getByRole("button",{name:"Instruments"}).click();const hid=!(await p.locator(".instruments").count());await p.getByRole("button",{name:"Instruments"}).click();check(A,"Instruments toggle hides/shows panel",hid&&await p.locator(".instruments").isVisible());
  await p.getByRole("button",{name:"Help"}).click();const h1=await p.getByRole("dialog").isVisible();await p.getByRole("button",{name:"Close"}).click();const h2=await p.getByRole("dialog").count();
  await p.getByRole("button",{name:"Help"}).click();await p.mouse.click(15,400);const h3=await p.getByRole("dialog").count();check(A,"Help opens; Close and backdrop dismiss",h1&&!h2&&!h3);
- // Touch yoke (each direction) — engages manual, holds, releases to HOLD
+ // Touch yoke (each direction) — engages manual, holds, releases to HOLD. Restart first: after landing, a mission ends and ignores flight input.
+ await p.keyboard.press("KeyR");await p.getByRole("button",{name:"Slower"}).click();await p.waitForFunction(()=>flightSim.world.aircraft.position.y>40,null,{timeout:180000});
  for(const [intent,test] of [["CLIMB",(a,b)=>b.vy>a.vy+1||b.y>a.y+3],["DESCEND",(a,b)=>b.vy<a.vy-1],["TURN_LEFT",(a,b)=>b.hdg<a.hdg-.05],["TURN_RIGHT",(a,b)=>b.hdg>a.hdg+.05],["SLOW",(a,b)=>b.spd<a.spd-1]]){
   const btn=p.locator(`.pad [data-intent="${intent}"]`);const a=await W(p);await btn.dispatchEvent("pointerdown",{pointerId:7});await waitT(p,2.5);const bb=await W(p);const shown=await txt(p,"[data-testid=mode]");
   await btn.dispatchEvent("pointerup",{pointerId:7});await p.waitForTimeout(300);const rel=await txt(p,"[data-testid=mode]");
