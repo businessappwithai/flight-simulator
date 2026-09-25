@@ -10,5 +10,5 @@ export function generateObstacles(g:WorldGenes):readonly EntityState[]{
  });return out;
 }
 
-export { generateEnvironment } from "./environment.ts";
-export type { TerrainCell, WeatherCell, TrafficSpawn, GameHazard, EnvironmentGenes } from "./environment.ts";
+export { generateEnvironment, terrainHeight } from "./environment.ts";
+export type { TerrainSample, WeatherCell, TrafficSpawn, GameHazard, EnvironmentGenes } from "./environment.ts";
