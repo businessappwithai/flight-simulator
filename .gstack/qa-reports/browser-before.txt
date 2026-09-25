@@ -1,0 +1,24 @@
+LOAD_MS 552
+status: waiting for telemetry
+after load: replay loaded: 390 events
+after 8 steps: decisions 3 | selected CLIMB · 100.0% | provider scripted / unknown
+play button: Pause replay
+after play: status 100 decisions observed | decisions 100 | overrides 3 | play button: Pause replay | LIVE badge: ● LIVE
+watchdog: "" alerts: ""
+timeline rows 100
+pinned: Pinned: d-5 | safety: DESCEND → CLIMB: TERRAIN_CLEARANCE
+reasons: "scripted/unknown requested DESCEND at 100.0% confidence.\nSafety changed DESCEND to CLIMB: TERRAIN_CLEARANCE."
+outcomes: { "IMMEDIATE": { "survival": 1, "separation": 1, "objective": 0, "stability": 0.6677083333333335, "efficiency": 0.9915095659566338 }, "1S": { "survival": 1, "separation": 1, "objective": 0, "stability
+tab learning visible: true | ExperienceForest → XGBoost background learner → shadow validation → promotion gate\nDreamer world-model trust → counterfactual verification → reusable skills
+tab safety visible: true | No safety overrides observed.
+tab raw visible: true | { "decisionId": "d-5", "requested": "DESCEND", "executed": "CLIMB", "provider": "scripted", "model": "unknown", "confidence": 1, "alternatives": [ { "intent": "
+follow: Following latest decision
+export lines: 390 (replayed file has 390 )
+reload replay + 1 step: decisions 101
+INSPECTOR_CONSOLE_ERRORS= []
+XSS executed: true | injected element: 1
+postMessage accepted w/o origin check: true
+mobile scrollWidth 638 vs 375
+canvas count 1
+worker resources: []
+SIM_CONSOLE_ERRORS= []
