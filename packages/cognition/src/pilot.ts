@@ -1,5 +1,5 @@
 import type { DecisionFrame, Observation, PilotIntent } from "@flight/protocol";
-import { disagreementScore, type DecisionEngineManager } from "@flight/decision-core";
+import { disagreementScore, topCandidate, type DecisionEngineManager } from "@flight/decision-core";
 import { RingBuffer } from "@flight/memory";
 import type { TemporalStrategy } from "./index.ts";
 import type { ExperienceRepository } from "@flight/experience";
@@ -25,7 +25,7 @@ export class CognitivePilot {
    question:`Choose the safest useful maneuver. Similar experience: ${JSON.stringify(experiences)}`,
    candidates:CANDIDATES,timeoutMs:250
   });
-  const top=result.primary.candidates[0];
+  const top=topCandidate(result.primary);
   return {intent:(top?.value??"HOLD"),probability:top?.probability??0,decisionId,disagreement:disagreementScore(result)};
  }
  remember(frame:DecisionFrame){this.memory.push(frame);}

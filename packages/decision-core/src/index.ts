@@ -140,6 +140,13 @@ export interface ProviderComparison<T extends string> {
   readonly probabilityDistance: number;
 }
 
+/** Highest-probability candidate; providers are not required to return candidates sorted. */
+export function topCandidate<T extends string>(response: DecisionResponse<T>) {
+  let best: DecisionResponse<T>["candidates"][number] | undefined;
+  for (const c of response.candidates) if (!best || c.probability > best.probability) best = c;
+  return best;
+}
+
 export function compareResponses<T extends string>(
   primary: DecisionResponse<T>,
   shadow: DecisionResponse<T>
@@ -150,9 +157,9 @@ export function compareResponses<T extends string>(
   let distance = 0;
   for (const v of values) distance += Math.abs((primaryMap.get(v) ?? 0) - (shadowMap.get(v) ?? 0));
   return {
-    sameTopChoice: primary.candidates[0]?.value === shadow.candidates[0]?.value,
-    primaryTop: primary.candidates[0]?.value,
-    shadowTop: shadow.candidates[0]?.value,
+    sameTopChoice: topCandidate(primary)?.value === topCandidate(shadow)?.value,
+    primaryTop: topCandidate(primary)?.value,
+    shadowTop: topCandidate(shadow)?.value,
     probabilityDistance: distance / 2
   };
 }
