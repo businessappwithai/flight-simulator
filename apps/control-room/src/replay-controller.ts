@@ -1,4 +1,4 @@
-import type {RuntimeEvent} from "@flight/runtime";
+import type {RuntimeEvent} from "@flight/protocol";
 export type ReplayState="IDLE"|"PLAYING"|"PAUSED"|"DONE";
 export class ReplayController{
  #events:RuntimeEvent[]=[];#i=0;#timer?:ReturnType<typeof setInterval>;state:ReplayState="IDLE";

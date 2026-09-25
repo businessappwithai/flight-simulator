@@ -142,3 +142,5 @@ export interface TemporalSummary {
 }
 
 export type { SimCommand, SimEvent, SimPilot, InspectorCommand } from "./worker.ts";
+
+export type { RuntimeEvent, DecisionTrace } from "./telemetry.ts";

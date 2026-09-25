@@ -11,9 +11,9 @@ import {DeterministicSimulation,defaultScenario} from "@flight/simulation";
 import {PerfectSensorSuite} from "@flight/sensors";
 import {parseFlightConfig} from "@flight/config";
 import {ddmin} from "@flight/scenario-generator";
-import {LiveDashboardModel} from "../apps/inspector/src/live-dashboard.ts";
-import {explanationIntegrity} from "../apps/inspector/src/explanation-integrity.ts";
-import {ReplayController} from "../apps/inspector/src/replay-controller.ts";
+import {LiveDashboardModel} from "../apps/control-room/src/live-dashboard.ts";
+import {explanationIntegrity} from "../apps/control-room/src/explanation-integrity.ts";
+import {ReplayController} from "../apps/control-room/src/replay-controller.ts";
 const req={id:"r",context:{schemaVersion:1} as any,question:"q",candidates:["HOLD","CLIMB","DESCEND"] as const,timeoutMs:250};
 // ISSUE-014 — pilot flew HOLD whatever the provider recommended (took candidates[0], not the most probable)
 test("pilot executes the provider's highest-probability intent",async()=>{const pilot=new CognitivePilot(new DecisionEngineManager(new ScriptedDecisionEngine(["DESCEND"])),new OutcomeAwareStrategy(),new InMemoryExperienceRepository());const obs=new PerfectSensorSuite().observe(new DeterministicSimulation().reset(defaultScenario(1n)));const d=await pilot.decide(obs);expect(d.intent).toBe("DESCEND");expect(d.probability).toBe(1)});

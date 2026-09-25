@@ -5,8 +5,8 @@ import {InMemoryExperienceRepository} from "@flight/experience";
 import {ObservableFlightRuntime,encodeTelemetry,decodeTelemetry} from "@flight/runtime";
 import {defaultScenario} from "@flight/simulation";
 import type {WorldModel} from "@flight/world-model";
-import {LiveDashboardModel} from "../apps/inspector/src/live-dashboard.ts";
-import {explanationIntegrity} from "../apps/inspector/src/explanation-integrity.ts";
+import {LiveDashboardModel} from "../apps/control-room/src/live-dashboard.ts";
+import {explanationIntegrity} from "../apps/control-room/src/explanation-integrity.ts";
 const failing:DecisionEngine={identity:{provider:"open-jev",model:"broken",version:"1"},decide:async()=>{throw new Error("503 upstream")},health:async()=>({healthy:false})};
 const dreamer:WorldModel={id:"dreamer-test",imagine:async(_s,actions,h)=>actions.flatMap(action=>h.map(horizonSeconds=>({action,horizonSeconds,predictedRisk:action==="DESCEND"?.9:.1,uncertainty:.05,predictedReward:{survival:1,separation:0,objective:0,stability:0,efficiency:0}})))};
 async function fly(advisors:any){

@@ -18,7 +18,7 @@ bun run simulator          # http://localhost:3200, or: bun apps/simulator/serve
 bun run simulator:build    # static files in dist/simulator
 ```
 
-The Control Room (decision replay/explanations) runs with `bun apps/inspector/index.html`.
+The Control Room (decision replay/explanations) runs with `bun apps/control-room/index.html`.
 
 The TypeSafe Jev and Open-Jev packages intentionally expose transport interfaces. Bind those transports to the exact API/runtime you deploy rather than embedding an assumed external API contract in the simulation core.
 

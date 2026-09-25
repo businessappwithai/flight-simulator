@@ -1,4 +1,4 @@
-import type {DecisionTrace} from "@flight/cognition";
+import type {DecisionTrace} from "@flight/protocol";
 import type {BenchmarkRow} from "./benchmark.ts";
 export interface InspectorBundle{version:1;episodeId:string;decisions:readonly DecisionTrace[];benchmarks:readonly BenchmarkRow[];telemetry:readonly unknown[]}
 export function encodeInspectorBundle(x:InspectorBundle){return JSON.stringify(x,(_,v)=>typeof v==="bigint"?`${v}n`:v)}

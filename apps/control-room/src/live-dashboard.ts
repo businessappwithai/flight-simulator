@@ -1,4 +1,4 @@
-import type {RuntimeEvent} from "@flight/runtime";
+import type {RuntimeEvent} from "@flight/protocol";
 import type {AdvisorEvidence} from "@flight/protocol";
 export type Ranked=readonly {action:string;probability:number}[];
 export type Imagined=readonly {action:string;horizonSeconds:number;predictedRisk:number;uncertainty:number;predictedReward:number}[];

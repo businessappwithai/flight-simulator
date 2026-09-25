@@ -1,4 +1,4 @@
-import type {RuntimeEvent} from "@flight/runtime";
+import type {RuntimeEvent} from "@flight/protocol";
 export class TelemetryBuffer{
  #events:RuntimeEvent[]=[];
  constructor(readonly capacity=5000){if(capacity<1)throw new Error("capacity must be positive")}
