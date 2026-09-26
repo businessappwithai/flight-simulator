@@ -15,7 +15,8 @@ export interface CopilotOptions{
  xgboost:()=>Pick<XGBoostBestPracticeClient,"train"|"predict"|"dispose">;
  minProviderConfidence?:number;
 }
-const message=(e:unknown)=>e instanceof Error?`${e.name&&e.name!=="Error"?`${e.name}: `:""}${e.message}`:String(e);
+// Class names are mangled in minified browser builds, so describe errors by HTTP status and message only.
+const message=(e:unknown)=>{if(!(e instanceof Error))return String(e);const status=(e as {status?:unknown}).status;return typeof status==="number"?`HTTP ${status}: ${e.message}`:e.message};
 /**
  * The copilot rides along while the autopilot flies: it asks Jev for a pilot intent (CognitivePilot), and when
  * Jev's confidence is below the threshold the XGBoost best-practice model, trained on this browser's finished

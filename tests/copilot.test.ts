@@ -14,6 +14,10 @@ function book():LearningBook{const f=observationFeatures(obs),b=emptyBook();b.ex
  for(let i=0;i<40;i++)for(const [a,ok] of [["CLIMB",1],["DESCEND",0],["TURN_LEFT",0]] as const)b.examples.push({f:f.map((v,k)=>k===0?v+(i%9)-4:v),a,ok});return b}
 const next=(c:Copilot,tick:bigint,flown:PilotIntent="HOLD")=>new Promise<[any,any]>(res=>c.advise(tick,obs,flown,(a,f)=>res([a,f])));
 const settle=async(c:Copilot)=>{for(let i=0;i<600&&!c.status.xgboost.trained&&!c.status.xgboost.detail?.startsWith("training failed");i++)await Bun.sleep(25)};
+test("errors are described by HTTP status and message, not (minified) class names",async()=>{
+ const c=new Copilot({xgboost:()=>{throw new Error("unused")},transport:jev(Object.assign(new Error("invalid api key"),{name:"q0",status:401}))});c.setKey("k");
+ c.advise(0n,obs,"HOLD",()=>{});for(let i=0;i<50&&c.status.jev!=="ERROR";i++)await Bun.sleep(5);expect(c.status.detail).toBe("HTTP 401: invalid api key");
+});
 test("off without a key; confident Jev recommends; the recommendation is a trace frame",async()=>{
  const c=new Copilot({xgboost:()=>{throw new Error("unused")},transport:jev({CLIMB:.8,HOLD:.2})});
  c.advise(0n,obs,"HOLD",()=>{throw new Error("no key, no advice")});expect(c.enabled).toBe(false);expect(c.status.jev).toBe("OFF");
@@ -47,7 +51,7 @@ test("Jev unreachable: status says why, requests back off, and a trained model s
  try{
   c.setKey("k");c.learnFrom(book());await settle(c);
   const [a]=await next(c,0n,"HOLD");
-  expect(c.status).toMatchObject({jev:"ERROR",detail:"APIConnectionError: Connection error."});
+  expect(c.status).toMatchObject({jev:"ERROR",detail:"Connection error."});
   expect(a).toMatchObject({intent:"CLIMB",source:"BEST_PRACTICE",provider:"xgboost:bp-1"});expect(a.reason).toMatch(/Jev could not be reached/);
   c.advise(ADVICE_EVERY_TICKS,obs,"HOLD",()=>{});await Bun.sleep(20);expect(calls.n).toBe(1); // backing off
   c.advise(ERROR_BACKOFF_TICKS,obs,"HOLD",()=>{});await Bun.sleep(20);expect(calls.n).toBe(2);
