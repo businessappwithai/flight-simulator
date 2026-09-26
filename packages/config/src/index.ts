@@ -4,7 +4,9 @@ export const FlightConfigSchema=z.object({
   mode:z.enum(["SINGLE","SHADOW"]).default("SINGLE"),
   primary:z.object({provider:z.enum(["jev","open-jev","scripted"]),model:z.string()}),
   shadow:z.object({provider:z.enum(["jev","open-jev"]),model:z.string()}).optional(),
-  timeoutMs:z.number().int().positive().default(250)
+  timeoutMs:z.number().int().positive().default(250),
+  // Below this top-candidate probability the best-practice (XGBoost) model decides instead (CognitivePilot).
+  minProviderConfidence:z.number().min(0).max(1).default(.5)
  }),
  worldModel:z.object({authority:z.enum(["SHADOW","ADVISORY","ACTIVE"]).default("SHADOW"),endpoint:z.string().url().optional()}).default({authority:"SHADOW"}),
  runtime:z.object({decisionIntervalTicks:z.number().int().positive().default(30),maxEpisodeTicks:z.number().int().positive().default(7200)}).prefault({})

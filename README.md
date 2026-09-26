@@ -74,6 +74,15 @@ checks that a mission flown through the worker ends with exactly the checksum of
 
 The AI layer never emits raw control surfaces. The deterministic controller owns low-level controls.
 
+## Low-confidence fallback to the XGBoost best-practice model
+
+`CognitivePilot` asks the primary decision engine (Jev/Open-Jev) and the XGBoost best-practice advisor in parallel.
+When the engine's top candidate is below `minProviderConfidence` (default 0.5; `decision.minProviderConfidence` in
+the flight config) and the model answered, the model's highest-ranked intent decides instead. The decision frame
+then names the model as its provider and `evidence.selection` records the engine's confidence, the threshold and
+the reason; the Control Room's "Why?" card shows it. If the model is not configured or fails, the engine's choice is
+kept and the reason says so.
+
 ## Added in continuation
 
 - shadow decision manager and provider comparison

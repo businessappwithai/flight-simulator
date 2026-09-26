@@ -39,6 +39,10 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
 - **Decision engines are plugins.** `packages/decision-core` defines `DecisionEngine`; Jev (`decision-jev`) and
   Open-Jev (`decision-open-jev`) are interchangeable transports. No TypeSafe Jev API contract is bound in this
   repo (see `LOCAL_RUN.md`).
+- **Low-confidence fallback.** `CognitivePilot` (packages/cognition) asks the primary engine and the XGBoost
+  best-practice advisor in parallel. If the engine's top candidate is below `minProviderConfidence` (default 0.5,
+  also `decision.minProviderConfidence` in `@flight/config`) and the model answered, the model's top-ranked intent
+  decides; the frame's `provider` is then the model's source and `evidence.selection` records why.
 - **Presentation boundary (enforced by `bun run audit:deps`, tested in `tests/dependency-boundary.test.ts`).**
   `packages/*` may not import React, R3F, Three.js or `apps/`. UI code in `apps/simulator` and
   `apps/control-room` may import only `@flight/protocol`. Only `*.worker.ts` files may use the core packages.

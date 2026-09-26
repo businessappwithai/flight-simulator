@@ -15,8 +15,14 @@ export function observationFeatures(o:Observation):number[]{
  return [o.altitude,o.speed,Math.sin(o.heading),Math.cos(o.heading),Math.min(d??1000,1000),Math.sin(b),Math.cos(b),Math.max(0,PHASES.indexOf(o.objectivePhase))];
 }
 export interface BestPracticeAdvisor{readonly source:string;predict(features:readonly number[]):Promise<readonly {action:PilotIntent;probability:number}[]>}
-export interface PilotAdvisors{bestPractice?:BestPracticeAdvisor;worldModel?:WorldModel;timeoutMs?:number;horizonsSeconds?:readonly number[]}
-export interface PilotDecision{intent:PilotIntent;probability:number;decisionId:string;disagreement:number;evidence:DecisionEvidence}
+/** Below this top-candidate probability the primary provider is not confident enough to decide alone. */
+export const DEFAULT_MIN_PROVIDER_CONFIDENCE=.5;
+export interface PilotAdvisors{bestPractice?:BestPracticeAdvisor;worldModel?:WorldModel;timeoutMs?:number;horizonsSeconds?:readonly number[];
+ /** When the primary provider's top candidate is below this, the best-practice model's top intent decides (if it answered). */
+ minProviderConfidence?:number}
+/** `provider` is who decided: the primary engine's provider, or the best-practice source when it took over. */
+export interface PilotDecision{intent:PilotIntent;probability:number;decisionId:string;disagreement:number;evidence:DecisionEvidence;provider:string}
+const pct=(x:number)=>`${Math.round(x*1000)/10}%`;
 
 async function advise<T>(source:string,timeoutMs:number,run:()=>Promise<T>):Promise<AdvisorEvidence<T>>{
  const t0=performance.now();let timer:ReturnType<typeof setTimeout>|undefined;
@@ -73,7 +79,17 @@ export class CognitivePilot {
    shadows:result.shadows.map((s,i)=>{const id=this.engines.shadows[i]!.identity;if(s.status==="rejected")return {provider:id.provider,model:id.model,error:s.reason instanceof Error?s.reason.message:String(s.reason)};const t=topCandidate(s.value);return {provider:id.provider,model:id.model,top:t?.value,probability:t?.probability}}),
    ...(bp?{bestPractice:bp}:{}),...(wm?{worldModel:wm}:{})
   };
-  return {intent:(top?.value??"HOLD"),probability:top?.probability??0,decisionId,disagreement,evidence};
+  // Low provider confidence: act on what the best-practice model learned instead, when it has an answer.
+  const threshold=this.advisors.minProviderConfidence??DEFAULT_MIN_PROVIDER_CONFIDENCE,confidence=top?.probability??0,learned=bp?.status==="OK"?bp.result[0]:undefined;
+  const provider=this.engines.primary.identity.provider;
+  if(confidence>=threshold)
+   return {intent:top?.value??"HOLD",probability:confidence,decisionId,disagreement,provider,evidence:{...evidence,selection:{source:"PROVIDER",providerConfidence:confidence,threshold,reason:`${provider} was confident enough (${pct(confidence)} ≥ ${pct(threshold)}).`}}};
+  if(learned&&bp)
+   return {intent:learned.action,probability:learned.probability,decisionId,disagreement,provider:bp.source,evidence:{...evidence,selection:{source:"BEST_PRACTICE",providerConfidence:confidence,threshold,
+    reason:`${provider} confidence ${pct(confidence)} was below ${pct(threshold)}, so the best-practice model (${bp.source}) decided: ${learned.action} at ${pct(learned.probability)} estimated success.`}}};
+  const why=!bp?"no best-practice model is configured":bp.status==="OK"?"the best-practice model returned no ranking":`the best-practice model is unavailable (${bp.detail})`;
+  return {intent:top?.value??"HOLD",probability:confidence,decisionId,disagreement,provider,evidence:{...evidence,selection:{source:"PROVIDER",providerConfidence:confidence,threshold,
+   reason:`${provider} confidence ${pct(confidence)} was below ${pct(threshold)}, but ${why}, so ${provider}'s choice was kept.`}}};
  }
  remember(frame:DecisionFrame){this.memory.push(frame);}
  /**
