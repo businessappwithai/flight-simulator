@@ -1,4 +1,4 @@
-import type {LearningBook,LearningInsight,PilotIntent,SimPilot,WorldSnapshot} from "@flight/protocol";
+import type {FlightTrace,LearningBook,LearningInsight,PilotIntent,SimPilot,WorldSnapshot} from "@flight/protocol";
 import {SimulationWorkerClient,type WorldEvent} from "./worker-client.ts";
 /**
  * Single source of truth for the presentation layer. Holds only protocol snapshots received from the
@@ -6,15 +6,22 @@ import {SimulationWorkerClient,type WorldEvent} from "./worker-client.ts";
  */
 export type ScenarioKind="default"|"seeded";
 export const RATES=[.5,1,2,4,8] as const;
-export interface LearningSummary{flights:number;landings:number;crashes:number;experiences:number}
+export interface LearningSummary{flights:number;landings:number;crashes:number;experiences:number;manualFlights:number;autopilotFlights:number}
 export interface HudState{world?:WorldSnapshot;pilot:SimPilot;intent:PilotIntent;autopilotMode:string;scenarioId:string;paused:boolean;rate:number;fps:number;simRate:number;checksum?:string;banner?:{title:string;detail?:string;sticky:boolean};error?:string;version:number;
  /** False while the aircraft waits on the runway: the simulation clock does not run until the pilot starts. */
- started:boolean;jevKeyHint?:string;learning:LearningSummary;insight?:LearningInsight}
+ started:boolean;jevKeyHint?:string;learning:LearningSummary;insight?:LearningInsight;
+ /** Recent flights kept as Control Room telemetry, newest last. */
+ traces:{flights:number;manual:number;autopilot:number}}
 /**
  * Browser persistence. Every access is guarded: storage can be disabled (private mode, blocked site data) or
  * full, and the simulator must keep flying either way.
  */
-export const JEV_KEY_STORAGE="flightWorld.jevKey",LEARNING_STORAGE="flightWorld.learning.v1";
+export const JEV_KEY_STORAGE="flightWorld.jevKey",LEARNING_STORAGE="flightWorld.learning.v2",TRACES_STORAGE="flightWorld.traces.v1",MAX_STORED_TRACES=20;
+// The v1 book (never released) used autopilot modes instead of intents, so it cannot join v2 learning.
+const RETIRED_STORAGE=["flightWorld.learning.v1"];
+/** Telemetry JSON as the Control Room reads it: bigint ticks as "123n". */
+const encode=(v:unknown)=>JSON.stringify(v,(_,x)=>typeof x==="bigint"?`${x}n`:x);
+const decode=(s:string)=>JSON.parse(s,(_,x)=>typeof x==="string"&&/^\d+n$/.test(x)?BigInt(x.slice(0,-1)):x);
 const storage={
  get(k:string){try{return localStorage.getItem(k)??undefined}catch{return undefined}},
  set(k:string,v:string){try{localStorage.setItem(k,v);return true}catch{return false}},
@@ -33,7 +40,8 @@ export class SimStore{
  readonly client:SimulationWorkerClient;
  latest?:WorldEvent;prevHeading?:number;turnDt=0;
  seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;paused=false;intent:PilotIntent="HOLD";started=false;jevKey?:string;
- learning:LearningSummary={flights:0,landings:0,crashes:0,experiences:0};
+ learning:LearningSummary={flights:0,landings:0,crashes:0,experiences:0,manualFlights:0,autopilotFlights:0};
+ traces:FlightTrace[]=[];
  fps=0;simRate=0;#tickDebt=0;#steppedTicks=0;#rateClock=performance.now();#frames=0;
  #listeners=new Set<()=>void>();#hud:HudState;#dirty=true;#lastNotify=0;#lastPhase="";#bannerTimer?:ReturnType<typeof setTimeout>;#errorTimer?:ReturnType<typeof setTimeout>;
  #banner?:HudState["banner"];#error?:string;#resetListeners=new Set<()=>void>();
@@ -45,19 +53,21 @@ export class SimStore{
   this.client.onError=m=>this.showError(`Simulation: ${m}`);
   this.client.onEvent(e=>{
    if(e.type==="LEARNING"){this.#learned(e.book,e.reason);return}
+   if(e.type==="TRACE"){this.#traced(e.trace);return}
    if(e.type!=="WORLD")return;const prev=this.latest?.world;
    this.turnDt=prev?Number(e.world.tick-prev.tick)/120:0;this.prevHeading=prev?.aircraft.heading;this.latest=e;this.#phase(e.world);this.#dirty=true});
   this.client.send({type:"SET_LEARNING",enabled:!!this.jevKey});
   this.#hud=this.#snapshot();this.restart();
   // After the first restart, which clears banners: a warning about unreadable saved learning must stay visible.
-  this.#loadLearning();
+  this.#loadLearning();this.#loadTraces();
  }
  // ---- React subscription (useSyncExternalStore); notifications are throttled to ~10 Hz.
  subscribe=(l:()=>void)=>{this.#listeners.add(l);return()=>{this.#listeners.delete(l)}};
  getSnapshot=()=>this.#hud;
  #notify(force=false){const now=performance.now();if(!force&&(!this.#dirty||now-this.#lastNotify<100))return;this.#lastNotify=now;this.#dirty=false;this.#hud=this.#snapshot();for(const l of this.#listeners)l()}
  #snapshot():HudState{const l=this.latest;return {world:l?.world,pilot:this.pilot,intent:this.intent,autopilotMode:l?.autopilotMode??"",scenarioId:l?.scenarioId??"—",paused:this.paused,rate:this.rate,fps:this.fps,simRate:this.simRate,checksum:this.client.checksum,banner:this.#banner,error:this.#error,version:(this.#hud?.version??0)+1,
-  started:this.started,jevKeyHint:this.jevKey?`••••${this.jevKey.slice(-4)}`:undefined,learning:this.learning,insight:this.jevKey?l?.insight:undefined}}
+  started:this.started,jevKeyHint:this.jevKey?`••••${this.jevKey.slice(-4)}`:undefined,learning:this.learning,insight:this.jevKey?l?.insight:undefined,
+  traces:{flights:this.traces.length,manual:this.traces.filter(t=>t.pilots.includes("MANUAL")).length,autopilot:this.traces.filter(t=>t.pilots.includes("AUTOPILOT")).length}}}
  onReset(l:()=>void){this.#resetListeners.add(l);return()=>{this.#resetListeners.delete(l)}}
  // ---- Called once per rendered frame by the R3F SimulationDriver.
  frame(rawDelta:number,hidden:boolean){
@@ -94,14 +104,34 @@ export class SimStore{
   this.toast("Jev key removed — manual control only",2600);this.#notify(true);
  }
  /** Forgets everything learned and puts the aircraft back on the runway. */
- clearLearning(){storage.remove(LEARNING_STORAGE);this.client.send({type:"CLEAR_LEARNING"});this.restart();this.toast("Learning cleared — back on the runway",2600)}
+ clearLearning(){storage.remove(LEARNING_STORAGE);storage.remove(TRACES_STORAGE);this.traces=[];this.client.send({type:"CLEAR_LEARNING"});this.restart();this.toast("Learning and traces cleared — back on the runway",2600)}
+ /** Recent flights as one JSONL file the Control Room can replay (`bun run control-room` → load JSONL). */
+ tracesJsonl(){return this.traces.flatMap(t=>t.events.map(encode)).join("\n")+(this.traces.length?"\n":"")}
+ downloadTraces(){
+  if(!this.traces.length)return;
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([this.tracesJsonl()],{type:"application/x-ndjson"}));
+  a.download=`flight-traces-${new Date().toISOString().slice(0,19).replaceAll(":","")}.jsonl`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+ }
+ #loadTraces(){
+  const raw=storage.get(TRACES_STORAGE);if(!raw)return;
+  try{const t=decode(raw);if(!Array.isArray(t)||!t.every(x=>x&&typeof x.id==="string"&&Array.isArray(x.pilots)&&Array.isArray(x.events)))throw new Error("bad traces");this.traces=t.slice(-MAX_STORED_TRACES)}
+  catch{storage.remove(TRACES_STORAGE);this.traces=[]}
+ }
+ #traced(trace:FlightTrace){
+  this.traces=[...this.traces,trace].slice(-MAX_STORED_TRACES);
+  // Oldest flights make room when storage is full; the in-memory list stays complete for this session.
+  let kept=this.traces;while(kept.length&&!storage.set(TRACES_STORAGE,encode(kept)))kept=kept.slice(1);
+  if(!kept.length)this.showError("Could not save flight traces: browser storage is disabled or full.");
+  this.#notify(true);
+ }
  #loadLearning(){
+  for(const k of RETIRED_STORAGE)storage.remove(k);
   const raw=storage.get(LEARNING_STORAGE);if(!raw)return;
   let book:unknown;try{book=JSON.parse(raw)}catch{storage.remove(LEARNING_STORAGE);this.toast("Saved learning was unreadable and has been reset",4000);return}
   this.client.send({type:"LOAD_LEARNING",book});
  }
  #learned(book:LearningBook,reason:"LOADED"|"RECORDED"|"CLEARED"|"REJECTED"){
-  this.learning={flights:book.flights,landings:book.landings,crashes:book.crashes,experiences:Object.keys(book.entries).length};
+  this.learning={flights:book.flights,landings:book.landings,crashes:book.crashes,experiences:Object.keys(book.entries).length,manualFlights:book.manual.flights,autopilotFlights:book.autopilot.flights};
   if(reason==="REJECTED"){storage.remove(LEARNING_STORAGE);this.toast("Saved learning was unreadable and has been reset",4000)}
   if(reason==="RECORDED"&&!storage.set(LEARNING_STORAGE,JSON.stringify(book)))this.showError("Could not save learning: browser storage is disabled or full.");
   this.#notify(true);

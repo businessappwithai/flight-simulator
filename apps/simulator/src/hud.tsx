@@ -91,9 +91,15 @@ export function AiPanel({hud,store,onClose}:{hud:HudState;store:SimStore;onClose
    <div><dt>Learning</dt><dd>{on?"on":"off"}</dd></div><div><dt>Flights</dt><dd>{l.flights}</dd></div>
    <div><dt>Landed</dt><dd>{l.landings}</dd></div><div><dt>Crashed</dt><dd>{l.crashes}</dd></div><div><dt>Experiences</dt><dd>{l.experiences}</dd></div>
   </dl>
-  {hud.insight&&<p className="insight" data-testid="insight">Best known here: <b>{hud.insight.action.replace(/^AP_/,"autopilot ").replaceAll("_"," ").toLowerCase()}</b> · landed {Math.round(hud.insight.successRate*100)}% of {hud.insight.visits}</p>}
+  <p className="k" data-testid="learning-sources">Learned from {l.manualFlights} manual and {l.autopilotFlights} autopilot {l.flights===1?"flight":"flights"} (a flight flown by both counts for each).</p>
+  {hud.insight&&<p className="insight" data-testid="insight">Best known here: <b>{hud.insight.action.replaceAll("_"," ").toLowerCase()}</b> · landed {Math.round(hud.insight.successRate*100)}% of {hud.insight.visits}
+   <span className="k"> ({[hud.insight.manual&&`${hud.insight.manual} manual`,hud.insight.autopilot&&`${hud.insight.autopilot} autopilot`].filter(Boolean).join(", ")})</span></p>}
+  <div className="row traces" data-testid="traces">
+   <span>Traces: <b>{hud.traces.flights}</b> recent {hud.traces.flights===1?"flight":"flights"} <span className="k">({hud.traces.manual} manual, {hud.traces.autopilot} autopilot)</span></span>
+   <button onClick={()=>store.downloadTraces()} disabled={!hud.traces.flights} data-testid="traces-download" title="JSONL for the Control Room replay">Download</button>
+  </div>
   <button className={confirm?"danger":undefined} onClick={()=>{if(!confirm){setConfirm(true);return}setConfirm(false);store.clearLearning()}} data-testid="learning-clear">
-   {confirm?"Click again to clear everything":"Clear learning & restart"}</button>
+   {confirm?"Click again to clear learning and traces":"Clear learning & restart"}</button>
  </section>;
 }
 export function Banner({hud}:{hud:HudState}){if(!hud.banner)return null;return <div className="banner panel" role="status"><div>{hud.banner.title}</div>{hud.banner.detail&&<small>{hud.banner.detail}</small>}</div>}

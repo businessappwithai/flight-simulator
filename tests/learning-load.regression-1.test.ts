@@ -12,8 +12,8 @@ test("loading learning publishes the insight for the parked aircraft without ste
   w.postMessage({type:"RESET",seed:"1"});w.postMessage({type:"SET_LEARNING",enabled:true});await next("WORLD");
   const parked=inbox.filter(x=>x.type==="WORLD").at(-1);expect(parked.world.tick).toBe(0n);
   const runway=situationFingerprint(new PerfectSensorSuite().observe(parked.world));
-  const from=inbox.length;w.postMessage({type:"LOAD_LEARNING",book:{version:1,flights:1,landings:1,crashes:0,entries:{[`${runway}|AP_TAKEOFF`]:{visits:1,successes:1,failures:0}}}});
+  const from=inbox.length;w.postMessage({type:"LOAD_LEARNING",book:{version:2,flights:1,landings:1,crashes:0,manual:{flights:0,landings:0,crashes:0},autopilot:{flights:1,landings:1,crashes:0},entries:{[`${runway}|CLIMB`]:{visits:1,successes:1,failures:0,manual:0,autopilot:1}}}});
   const world=await next("WORLD",from);
-  expect(world.world.tick).toBe(0n);expect(world.insight).toMatchObject({action:"AP_TAKEOFF",successRate:1,visits:1});
+  expect(world.world.tick).toBe(0n);expect(world.insight).toMatchObject({action:"CLIMB",successRate:1,visits:1});
  }finally{w.terminate()}
 });
