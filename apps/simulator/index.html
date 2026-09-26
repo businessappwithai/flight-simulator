@@ -64,6 +64,8 @@ input[aria-invalid=true]{border-color:var(--bad)}
 .pad{position:fixed;left:var(--safe-l);bottom:calc(var(--safe-b) + var(--dock-h) + var(--gap));display:none;grid-template-columns:repeat(3,56px);gap:8px}
 .pad button{height:52px;font-size:18px}
 @media (pointer:coarse){.pad{display:grid}}
+/* Touch phones: the start card and then the yoke sit above the dock; the panel scrolls rather than covering them. */
+@media (pointer:coarse) and (max-width:600px){.ai{max-height:calc(100vh - var(--top-h,58px) - var(--dock-h) - 216px)}}
 /* iPad portrait and small laptops: drop the duplicate text readout, keep instruments + map. */
 @media (max-width:1100px){.readout{display:none}}
 @media (max-width:900px){:root{--map:170px}.chip.opt{display:none}}

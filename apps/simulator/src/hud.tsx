@@ -91,11 +91,11 @@ export function AiPanel({hud,store,onClose}:{hud:HudState;store:SimStore;onClose
    <div><dt>Learning</dt><dd>{on?"on":"off"}</dd></div><div><dt>Flights</dt><dd>{l.flights}</dd></div>
    <div><dt>Landed</dt><dd>{l.landings}</dd></div><div><dt>Crashed</dt><dd>{l.crashes}</dd></div><div><dt>Experiences</dt><dd>{l.experiences}</dd></div>
   </dl>
-  <p className="k" data-testid="learning-sources">Learned from {l.manualFlights} manual and {l.autopilotFlights} autopilot {l.flights===1?"flight":"flights"} (a flight flown by both counts for each).</p>
+  <p className="k" data-testid="learning-sources" title="A flight flown by both pilots counts for each">From {l.manualFlights} manual and {l.autopilotFlights} autopilot {l.manualFlights+l.autopilotFlights===1?"flight":"flights"}</p>
   {hud.insight&&<p className="insight" data-testid="insight">Best known here: <b>{hud.insight.action.replaceAll("_"," ").toLowerCase()}</b> · landed {Math.round(hud.insight.successRate*100)}% of {hud.insight.visits}
    <span className="k"> ({[hud.insight.manual&&`${hud.insight.manual} manual`,hud.insight.autopilot&&`${hud.insight.autopilot} autopilot`].filter(Boolean).join(", ")})</span></p>}
   <div className="row traces" data-testid="traces">
-   <span>Traces: <b>{hud.traces.flights}</b> recent {hud.traces.flights===1?"flight":"flights"} <span className="k">({hud.traces.manual} manual, {hud.traces.autopilot} autopilot)</span></span>
+   <span title="Recent flights as Control Room telemetry">Traces: <b>{hud.traces.flights}</b> <span className="k">({hud.traces.manual} manual, {hud.traces.autopilot} autopilot)</span></span>
    <button onClick={()=>store.downloadTraces()} disabled={!hud.traces.flights} data-testid="traces-download" title="JSONL for the Control Room replay">Download</button>
   </div>
   <button className={confirm?"danger":undefined} onClick={()=>{if(!confirm){setConfirm(true);return}setConfirm(false);store.clearLearning()}} data-testid="learning-clear">
