@@ -7,7 +7,7 @@ import {Aircraft,CameraController,Entities,QualityGovernor,Scenery,SimulationDri
 import {createAircraft} from "./aircraft-model.ts";
 import {CAMERA_MODES,type CameraMode} from "./cameras.ts";
 import type {Scenery as SceneryHandle} from "./scenery.ts";
-import {Banner,ErrorBox,Help,Instruments,MovingMap,Readout,TopBar,TouchPad,useHud} from "./hud.tsx";
+import {AiPanel,Banner,ErrorBox,Help,Instruments,MovingMap,Readout,StartPanel,TopBar,TouchPad,useHud} from "./hud.tsx";
 // URL options (also used by automated QA): ?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0
 export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean}
 export function parseOptions(search:string):AppOptions{
@@ -25,6 +25,8 @@ class RenderBoundary extends Component<{children:ReactNode;onError:(m:string)=>v
 export function App({options,store}:{options:AppOptions;store:SimStore}){
  const hud=useHud(store),model=useMemo(createAircraft,[]),scenery=useRef<SceneryHandle|null>(null);
  const [camera,setCamera]=useState<CameraMode>(options.camera),[panel,setPanel]=useState(true),[help,setHelp]=useState(false);
+ // Open on arrival when there is no Jev key yet, so the key box is the first thing offered.
+ const [ai,setAi]=useState(()=>!store.jevKey);
  const onScenery=useCallback((s:SceneryHandle)=>{scenery.current=s},[]);
  const nextCamera=useCallback(()=>setCamera(c=>CAMERA_MODES[(CAMERA_MODES.indexOf(c)+1)%CAMERA_MODES.length]!),[]);
  // Entities are mounted once per scenario (ids/kinds/radii); their motion comes from snapshots each frame.
@@ -34,7 +36,9 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
  useEffect(()=>{const u=new URL(location.href);u.searchParams.set("seed",String(store.seed));u.searchParams.set("scenario",store.scenario);history.replaceState(null,"",u)},[store,hud.scenarioId]);
  useEffect(()=>{
   const held:PilotIntent[]=[];const sync=()=>store.setIntent(held.at(-1)??"HOLD");
-  const down=(e:KeyboardEvent)=>{const i=KEYMAP[e.code];if(i){e.preventDefault();if(!e.repeat){if(store.pilot==="AUTOPILOT")store.setPilot("MANUAL",true);if(!held.includes(i))held.push(i);sync()}return}
+  // Typing in a field (the Jev key box) must not fly the aircraft or trigger shortcuts.
+  const typing=(e:KeyboardEvent)=>e.target instanceof HTMLElement&&(e.target.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
+  const down=(e:KeyboardEvent)=>{if(typing(e))return;const i=KEYMAP[e.code];if(i){e.preventDefault();if(!e.repeat){if(store.pilot==="AUTOPILOT")store.setPilot("MANUAL",true);if(!held.includes(i))held.push(i);sync()}return}
    if(e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
    switch(e.code){case "KeyA":store.setPilot(store.pilot==="AUTOPILOT"?"MANUAL":"AUTOPILOT",true);break;case "KeyC":nextCamera();break;
     case "Digit1":case "Digit2":case "Digit3":case "Digit4":setCamera(CAMERA_MODES[Number(e.code.slice(-1))-1]!);break;
@@ -65,7 +69,9 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
     <QualityGovernor store={store} quality={options.quality}/>
    </Canvas>
   </RenderBoundary>
-  <TopBar hud={hud} camera={camera} panel={panel} store={store} onCamera={nextCamera} onPanel={()=>setPanel(v=>!v)} onHelp={()=>setHelp(v=>!v)}/>
+  <TopBar hud={hud} camera={camera} panel={panel} ai={ai} store={store} onCamera={nextCamera} onPanel={()=>setPanel(v=>!v)} onAi={()=>setAi(v=>!v)} onHelp={()=>setHelp(v=>!v)}/>
+  {ai&&<AiPanel hud={hud} store={store} onClose={()=>setAi(false)}/>}
+  <StartPanel hud={hud} store={store}/>
   <ErrorBox hud={hud}/><Banner hud={hud}/>
   <TouchPad store={store}/>
   {options.hud&&<footer className="dock"><Readout hud={hud}/>{panel&&<Instruments store={store}/>}<MovingMap store={store}/></footer>}

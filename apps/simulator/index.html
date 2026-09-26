@@ -40,13 +40,33 @@ button:hover{background:rgba(48,62,82,.95)}button[aria-pressed=true]{border-colo
 .help{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:16px}
 .help .panel{padding:18px 22px;max-width:560px;font-size:14px;line-height:1.6;max-height:100%;overflow:auto}
 .help kbd{display:inline-block;min-width:22px;padding:1px 6px;border:1px solid #556;border-bottom-width:2px;border-radius:4px;background:#1c2330;font:12px ui-monospace,monospace;text-align:center}
+button.locked{opacity:.55}
+button.primary{border-color:var(--accent);background:rgba(245,166,35,.22)}button.danger{border-color:var(--bad);color:#ffd7d4}
+button:disabled{opacity:.5;cursor:default}
+input{font:inherit;font-size:13px;color:var(--text);background:rgba(8,12,18,.85);border:1px solid rgba(255,255,255,.22);border-radius:8px;padding:6px 8px;min-height:32px;min-width:0;-webkit-user-select:text;user-select:text}
+input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+input[aria-invalid=true]{border-color:var(--bad)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* Jev key + learning: a small card under the top bar on the left. */
+.ai{position:fixed;left:var(--safe-l);top:calc(var(--safe-t) + 48px);width:min(300px,calc(100vw - var(--safe-l) - var(--safe-r)));padding:10px 12px;font-size:12px;line-height:1.45;max-height:calc(100vh - var(--dock-h) - 90px);overflow:auto}
+.ai header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.ai header b{font-size:13px}
+.ai .close{min-height:26px;padding:0 8px;font-size:16px;line-height:1}
+.ai .row{display:flex;gap:6px;align-items:center;justify-content:space-between}.ai form.row input{flex:1}
+.ai code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+.ai p{margin:6px 0}.ai .problem{color:#ffb3ad}
+.ai .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:8px 0;text-align:center}
+.ai .stats dt{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}.ai .stats dd{margin:0;font-weight:650}
+.ai .insight{color:#cfe6ff}.ai>button{width:100%}
+/* Start card: on the runway before the take-off roll; sits just above the dock. */
+.start{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-b) + var(--dock-h) + var(--gap));width:min(420px,calc(100vw - 30px));padding:14px 16px;text-align:center;font-size:13px}
+.start b{font-size:17px}.start p{margin:6px 0}.start-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px}.start-actions button{min-height:38px;font-size:13px}
 /* Touch yoke: shown on touch devices (iPad), sits above the dock on the left. */
 .pad{position:fixed;left:var(--safe-l);bottom:calc(var(--safe-b) + var(--dock-h) + var(--gap));display:none;grid-template-columns:repeat(3,56px);gap:8px}
 .pad button{height:52px;font-size:18px}
 @media (pointer:coarse){.pad{display:grid}}
 /* iPad portrait and small laptops: drop the duplicate text readout, keep instruments + map. */
 @media (max-width:1100px){.readout{display:none}}
-@media (max-width:900px){:root{--map:170px}.chip.opt{display:none}}
+@media (max-width:900px){:root{--map:170px}.chip.opt{display:none}.ai{top:calc(var(--safe-t) + 92px)}}
 /* Phones */
 @media (max-width:600px){:root{--map:112px;--dock-h:32vh}.buttons button{padding:5px 8px}.dock{align-items:flex-end}.banner{top:30%;font-size:17px}.pad{grid-template-columns:repeat(3,48px)}.pad button{height:44px}}
 @media (max-height:500px){:root{--dock-h:44vh;--map:130px}}

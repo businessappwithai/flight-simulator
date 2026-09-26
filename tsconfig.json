@@ -41,6 +41,12 @@
       "@flight/experience": [
         "./packages/experience/src/index.ts"
       ],
+      "@flight/experience/fingerprint": [
+        "./packages/experience/src/fingerprint.ts"
+      ],
+      "@flight/learning": [
+        "./packages/learning/src/index.ts"
+      ],
       "@flight/world-model": [
         "./packages/world-model/src/index.ts"
       ],

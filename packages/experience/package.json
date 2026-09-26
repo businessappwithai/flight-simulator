@@ -1,1 +1,1 @@
-{"name":"@flight/experience","type":"module","exports":"./src/index.ts"}
+{"name":"@flight/experience","type":"module","exports":{".":"./src/index.ts","./fingerprint":"./src/fingerprint.ts"}}

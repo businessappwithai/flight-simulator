@@ -147,6 +147,6 @@ export interface TemporalSummary {
   readonly ineffectiveActions: readonly PilotIntent[];
 }
 
-export type { SimCommand, SimEvent, SimPilot, InspectorCommand } from "./worker.ts";
+export type { SimCommand, SimEvent, SimPilot, InspectorCommand, LearningBook, LearningEntry, LearningInsight } from "./worker.ts";
 
 export type { RuntimeEvent, DecisionTrace } from "./telemetry.ts";

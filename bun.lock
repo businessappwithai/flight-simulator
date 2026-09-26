@@ -83,6 +83,9 @@
     "packages/failure-analysis": {
       "name": "@flight/failure-analysis",
     },
+    "packages/learning": {
+      "name": "@flight/learning",
+    },
     "packages/memory": {
       "name": "@flight/memory",
     },
@@ -164,6 +167,8 @@
     "@flight/experiments": ["@flight/experiments@workspace:packages/experiments"],
 
     "@flight/failure-analysis": ["@flight/failure-analysis@workspace:packages/failure-analysis"],
+
+    "@flight/learning": ["@flight/learning@workspace:packages/learning"],
 
     "@flight/memory": ["@flight/memory@workspace:packages/memory"],
 

@@ -26,3 +26,23 @@ test("bad commands are rejected with ERROR and do not break the worker",async()=
  await Bun.sleep(100);expect(inbox.filter(x=>x.type==="ERROR")).toHaveLength(7);
  const from=inbox.length;w.postMessage({type:"STEP",ticks:1e9,seq:9});const ok=await next("WORLD",from);expect(ok.world.tick).toBe(240n);
 }finally{w.terminate()}});
+test("learning records a finished autopilot flight without changing the flight itself",async()=>{const {w,inbox,next}=worker();try{
+ w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});w.postMessage({type:"SET_LEARNING",enabled:true});await next("WORLD");
+ let seq=0,last:any;for(let i=0;i<200;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
+ const learned=inbox.filter(x=>x.type==="LEARNING");expect(learned).toHaveLength(1);expect(learned[0].reason).toBe("RECORDED");
+ expect(learned[0].book).toMatchObject({flights:1,landings:1,crashes:0});expect(Object.keys(learned[0].book.entries).length).toBeGreaterThan(3);
+ expect(Object.keys(learned[0].book.entries).every((k:string)=>/\|AP_[A-Z_]+$/.test(k))).toBe(true);
+ const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);const ref=await direct(defaultScenario(1n));
+ expect(chk.checksum).toBe(ref.chk);expect(inbox.filter(x=>x.type==="LEARNING")).toHaveLength(1);
+ // The next flight starts from what was learned: the worker reports the best action for the runway situation.
+ w.postMessage({type:"RESET",seed:"1",scenario:"default"});const f2=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:++seq});const again=await next("WORLD",f2);
+ expect(again.learning).toBe(true);expect(again.insight?.action).toMatch(/^AP_/);
+}finally{w.terminate()}},30_000);
+test("learning is off by default, loads saved books, rejects corrupt ones and can be cleared",async()=>{const {w,inbox,next}=worker();try{
+ w.postMessage({type:"RESET",seed:"1"});const first=await next("WORLD");expect(first.learning).toBe(false);expect(first.insight).toBeUndefined();
+ w.postMessage({type:"LOAD_LEARNING",book:{version:1,flights:2,landings:1,crashes:1,entries:{"X|HOLD":{visits:2,successes:1,failures:1}}}});
+ expect(await next("LEARNING")).toMatchObject({reason:"LOADED",book:{flights:2}});
+ let from=inbox.length;w.postMessage({type:"LOAD_LEARNING",book:{version:1,flights:"lots"}});expect(await next("LEARNING",from)).toMatchObject({reason:"REJECTED",book:{flights:0}});
+ from=inbox.length;w.postMessage({type:"CLEAR_LEARNING"});expect(await next("LEARNING",from)).toMatchObject({reason:"CLEARED",book:{flights:0,entries:{}}});
+ from=inbox.length;w.postMessage({type:"SET_LEARNING",enabled:"yes"});expect((await next("ERROR",from)).message).toMatch(/invalid learning flag/);
+}finally{w.terminate()}});
