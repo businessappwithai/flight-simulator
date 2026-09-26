@@ -25,7 +25,9 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0b1118;ove
 .chip{padding:6px 10px;font-size:12px;line-height:1.2;white-space:nowrap}.chip b{font-weight:650}.chip .k{margin-right:4px}
 .phase.OUTBOUND,.phase.RETURN{color:#9fd3ff}.phase.COMPLETE{color:var(--ok)}.phase.FAILED{color:var(--bad)}
 button{font:inherit;font-size:12px;color:var(--text);background:rgba(30,40,54,.88);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:6px 10px;min-height:32px;cursor:pointer;touch-action:manipulation}
-button:hover{background:rgba(48,62,82,.95)}button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
+button:hover{background:rgba(48,62,82,.95)}
+a.btn{font:inherit;font-size:12px;color:var(--text);background:rgba(30,40,54,.88);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:6px 10px;min-height:32px;display:inline-flex;align-items:center;text-decoration:none;touch-action:manipulation}
+a.btn:hover{background:rgba(48,62,82,.95)}a.btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}a.btn.lab{border-color:rgba(57,135,229,.8);color:#cfe6ff}button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
 /* Bottom dock: readout · instruments · map. One flex row that shrinks, so nothing overlaps at any width. */
 .dock{position:fixed;left:var(--safe-l);right:var(--safe-r);bottom:var(--safe-b);height:var(--dock-h);display:flex;gap:var(--gap);align-items:flex-end;justify-content:center;pointer-events:none}
 .dock>*{pointer-events:auto}
@@ -72,7 +74,7 @@ input[aria-invalid=true]{border-color:var(--bad)}
 @media (max-width:1100px){.readout{display:none}}
 @media (max-width:900px){:root{--map:170px}.chip.opt{display:none}}
 /* Phones */
-@media (max-width:600px){:root{--map:112px;--dock-h:32vh}.buttons button{padding:5px 8px}.dock{align-items:flex-end}.banner{top:30%;font-size:17px}.pad{grid-template-columns:repeat(3,48px)}.pad button{height:44px}}
+@media (max-width:600px){:root{--map:112px;--dock-h:32vh}.buttons button,.buttons a.btn{padding:5px 8px}.dock{align-items:flex-end}.banner{top:30%;font-size:17px}.pad{grid-template-columns:repeat(3,48px)}.pad button{height:44px}}
 @media (max-height:500px){:root{--dock-h:44vh;--map:130px}}
 </style>
 </head>

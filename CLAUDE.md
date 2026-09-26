@@ -17,13 +17,15 @@ bun run audit                         # no Math.random in deterministic packages
 bun run audit:deps                    # presentation/core dependency boundary (see Architecture)
 python3 scripts/static-check.py       # static import/API audit
 bun run verify:all                    # everything CI-equivalent in one go
-bun run simulator                     # 3D simulator, http://localhost:3200 (apps/simulator/serve.ts --port N)
+bun run simulator                     # 3D simulator, http://localhost:3200 (+ Control Room at /control-room/, as on Pages)
 bun run simulator:build               # static build → dist/simulator (page + sim.worker.js)
 bun run control-room                  # decision replay dashboard, http://localhost:3100
 bun run benchmark                     # reference autopilot over seed-varied scenarios
 ```
 
 CI (`.github/workflows/ci.yml`) runs `bun install`, `typecheck`, `bun test`, `audit`, `audit:deps`.
+`.github/workflows/pages.yml` builds the simulator plus the Control Room (`/control-room/`, Learning Lab at
+`#lab`) and is the only Pages deployer (Pages source: GitHub Actions); a second deploying workflow would race it.
 
 ## Architecture
 
