@@ -24,6 +24,8 @@ bun run benchmark                     # reference autopilot over seed-varied sce
 ```
 
 CI (`.github/workflows/ci.yml`) runs `bun install`, `typecheck`, `bun test`, `audit`, `audit:deps`.
+`.github/workflows/pages.yml` builds the simulator plus the Control Room (`/control-room/`, Learning Lab at
+`#lab`) and is the only Pages deployer (Pages source: GitHub Actions); a second deploying workflow would race it.
 
 ## Architecture
 

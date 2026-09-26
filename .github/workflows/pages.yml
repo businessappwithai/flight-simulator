@@ -2,6 +2,8 @@ name: pages
 # Builds the 3D simulator (with the Control Room at /control-room/) as a static site, deploys it to GitHub Pages
 # from main, then drives the published site in a browser and uploads screenshots. Pull requests build the same
 # files and run the same browser test against them, served locally under the same /<repo>/ path, without deploying.
+# This must be the only workflow that deploys Pages (Settings → Pages → Source: GitHub Actions). A second deployer,
+# such as GitHub's "Static HTML" starter that uploads the raw repository, races this one and the site shows the README.
 on:
   push:
     branches: [main]
