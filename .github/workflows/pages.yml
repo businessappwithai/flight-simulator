@@ -1,0 +1,83 @@
+name: pages
+# Builds the 3D simulator (with the Control Room at /control-room/) as a static site, deploys it to GitHub Pages
+# from main, then drives the published site in a browser and uploads screenshots. Pull requests build the same
+# files and run the same browser test against them, served locally under the same /<repo>/ path, without deploying.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - run: bun run simulator:build
+      - run: bun build apps/control-room/index.html --outdir dist/simulator/control-room --minify
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/simulator
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  smoke:
+    # Runs after a deploy (against Pages) or, on pull requests, against the built artifact served locally.
+    needs: [build, deploy]
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.deploy.result == 'success' || github.event_name == 'pull_request') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        if: github.event_name == 'pull_request'
+        with:
+          name: github-pages
+          path: artifact
+      - name: Serve the built site locally (pull requests)
+        if: github.event_name == 'pull_request'
+        run: |
+          mkdir -p "site/${{ github.event.repository.name }}"
+          tar -xf artifact/artifact.tar -C "site/${{ github.event.repository.name }}"
+          (cd site && nohup python3 -m http.server 8000 >/dev/null 2>&1 &)
+          echo "SITE=http://localhost:8000/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
+      - name: Use the deployed site
+        if: github.event_name != 'pull_request'
+        run: echo "SITE=${{ needs.deploy.outputs.page_url }}" >> "$GITHUB_ENV"
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --prefix .github/scripts playwright@1.56.1
+          .github/scripts/node_modules/.bin/playwright install --with-deps chromium
+      - name: Browser smoke test with screenshots
+        run: node .github/scripts/pages-smoke.mjs
+        env:
+          OUT: pages-screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pages-screenshots
+          path: pages-screenshots

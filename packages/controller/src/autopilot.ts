@@ -1,4 +1,4 @@
-import type { AircraftControls, WorldSnapshot } from "@flight/protocol";
+import type { AircraftControls, PilotIntent, WorldSnapshot } from "@flight/protocol";
 /**
  * Stateless reference autopilot for the deterministic flight model: take off, fly to the checkpoint,
  * turn back, intercept the runway centreline, fly a stabilised glide path and touch down within the
@@ -32,6 +32,20 @@ export function autopilotTarget(w:WorldSnapshot,t:AutopilotTuning=DEFAULT_AUTOPI
  if(!aligned)return {mode:"TURN_BACK",heading,altitude:Math.max(45,Math.min(checkpoint.y,glide)),speed:t.cruiseSpeed,maxBank:.6};
  if(p.y<1.5)return {mode:p.y<.3?"ROLLOUT":"FLARE",heading,altitude:0,speed:t.approachSpeed-4,maxBank:.05};
  return {mode:"FINAL",heading,altitude:glide,speed:along<500?t.approachSpeed:t.cruiseSpeed*.8,maxBank:p.y<15?.12:.35};
+}
+/**
+ * The pilot intent that describes what the autopilot is flying right now, so autopilot and manual flights share
+ * one vocabulary in learning and traces. Descriptive only: the autopilot's controls never come from it.
+ */
+export function autopilotIntent(w:WorldSnapshot,t:AutopilotTuning=DEFAULT_AUTOPILOT):PilotIntent{
+ const target=autopilotTarget(w,t),a=w.aircraft;
+ if(target.mode==="FLARE"||target.mode==="ROLLOUT")return "SLOW";
+ if(target.mode==="TAKEOFF")return "CLIMB";
+ // Heading grows with positive roll, which is what TURN_RIGHT flies.
+ const turn=wrap(target.heading-a.heading);
+ if(Math.abs(turn)>.15)return turn>0?"TURN_RIGHT":"TURN_LEFT";
+ const climb=target.altitude-a.position.y;
+ return climb>5?"CLIMB":climb<-5?"DESCEND":"HOLD";
 }
 export function autopilotControls(w:WorldSnapshot,t:AutopilotTuning=DEFAULT_AUTOPILOT):AircraftControls{
  const a=w.aircraft,p=a.position,speed=Math.hypot(a.velocity.x,a.velocity.y,a.velocity.z),target=autopilotTarget(w,t);

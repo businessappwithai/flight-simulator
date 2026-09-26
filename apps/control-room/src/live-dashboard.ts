@@ -1,5 +1,5 @@
 import type {RuntimeEvent} from "@flight/protocol";
-import type {AdvisorEvidence} from "@flight/protocol";
+import type {AdvisorEvidence,DecisionEvidence} from "@flight/protocol";
 export type Ranked=readonly {action:string;probability:number}[];
 export type Imagined=readonly {action:string;horizonSeconds:number;predictedRisk:number;uncertainty:number;predictedReward:number}[];
 export interface ShadowWhy{provider:string;model:string;top?:string;probability?:number;error?:string}
@@ -9,6 +9,8 @@ export interface DecisionWhy{
  temporalPatterns:readonly string[];experienceIds:readonly string[];
  disagreement:number;safetyReason?:string;outcomes:Record<string,unknown>;startTick?:string;
  shadows?:readonly ShadowWhy[];bestPractice?:AdvisorEvidence<Ranked>;worldModel?:AdvisorEvidence<Imagined>;
+ /** Who chose the intent: the provider, or the best-practice model when the provider was not confident enough. */
+ selection?:DecisionEvidence["selection"];
 }
 export interface DashboardMetrics{decisions:number;overrides:number;overrideRate:number;episodes:number;providerDisagreements:number;meanConfidence:number}
 const pct=(x:number)=>`${(x*100).toFixed(1)}%`;
@@ -22,7 +24,7 @@ export class LiveDashboardModel{
    const id=String(t.decisionId??f.id??`decision-${this.#order.length+1}`),requested=String(t.requested??f.requestedIntent??candidates[0]?.intent??"UNKNOWN"),executed=String(t.executed??f.executedIntent??requested);
    const confidence=Number(f.probability??candidates[0]?.probability??0),disagreement=Number(t.providerDisagreement??0);
    if(!this.#decisions.has(id))this.#order.push(id);
-   this.#decisions.set(id,{decisionId:id,requested,executed,provider:String(t.provider??f.provider??"unknown"),model:String(t.model??"unknown"),confidence,alternatives:candidates.slice(0,5),temporalPatterns:[...(t.temporalPatterns??[])],experienceIds:[...(t.retrievedExperienceIds??[])],disagreement,safetyReason:t.safetyReason,outcomes:{...(f.outcome??{})},startTick:f.startTick!==undefined?String(f.startTick):undefined,shadows:[...(t.shadows??[])],bestPractice:t.bestPractice,worldModel:t.worldModel});
+   this.#decisions.set(id,{decisionId:id,requested,executed,provider:String(t.provider??f.provider??"unknown"),model:String(t.model??"unknown"),confidence,alternatives:candidates.slice(0,5),temporalPatterns:[...(t.temporalPatterns??[])],experienceIds:[...(t.retrievedExperienceIds??[])],disagreement,safetyReason:t.safetyReason,outcomes:{...(f.outcome??{})},startTick:f.startTick!==undefined?String(f.startTick):undefined,shadows:[...(t.shadows??[])],bestPractice:t.bestPractice,selection:t.selection,worldModel:t.worldModel});
    this.#confidence+=confidence;if(disagreement>.25)this.#disagreements++;
   } else if(e.type==="SAFETY_OVERRIDE"){this.#overrides++;const d=this.#decisions.get(e.decisionId);if(d){d.executed=e.executed;d.safetyReason=e.reason}}
   else if(e.type==="OUTCOME"){const d=this.#decisions.get(e.decisionId);if(d)d.outcomes[e.horizon]=e.reward}
@@ -34,6 +36,8 @@ export class LiveDashboardModel{
  explain(id:string){
   const d=this.#decisions.get(id);if(!d)return undefined;
   const reasons=[`${d.provider}/${d.model} requested ${d.requested} at ${pct(d.confidence)} confidence.`];
+  if(d.selection?.source==="BEST_PRACTICE")reasons.unshift(`Low-confidence fallback: ${d.selection.reason}`);
+  else if(d.selection&&d.selection.providerConfidence<d.selection.threshold)reasons.push(d.selection.reason);
   const alt=d.alternatives.find(a=>a.intent!==d.requested&&a.probability>0);if(alt)reasons.push(`Next best alternative: ${alt.intent} at ${pct(alt.probability)}.`);
   if(d.temporalPatterns.length)reasons.push(`Temporal evidence: ${d.temporalPatterns.join("; ")}.`);
   if(d.experienceIds.length)reasons.push(`${d.experienceIds.length} prior experience records contributed.`);

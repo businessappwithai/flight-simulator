@@ -131,6 +131,16 @@ export interface DecisionEvidence {
   readonly bestPractice?: AdvisorEvidence<readonly { readonly action: PilotIntent; readonly probability: number }[]>;
   readonly worldModel?: AdvisorEvidence<readonly { readonly action: PilotIntent; readonly horizonSeconds: number; readonly predictedRisk: number; readonly uncertainty: number; readonly predictedReward: number }[]>;
   readonly safetyReason?: string;
+  /**
+   * Who chose the intent. The primary provider (Jev/Open-Jev) decides when its top candidate reaches
+   * `threshold`; below it the best-practice (XGBoost) model's highest-ranked intent is used when it answered.
+   */
+  readonly selection?: {
+    readonly source: "PROVIDER" | "BEST_PRACTICE";
+    readonly providerConfidence: number;
+    readonly threshold: number;
+    readonly reason: string;
+  };
 }
 
 export type TemporalStrategyName =
@@ -147,6 +157,6 @@ export interface TemporalSummary {
   readonly ineffectiveActions: readonly PilotIntent[];
 }
 
-export type { SimCommand, SimEvent, SimPilot, InspectorCommand } from "./worker.ts";
+export type { SimCommand, SimEvent, SimPilot, InspectorCommand, LearningBook, LearningEntry, LearningInsight, LearningTally, LearningExample, FlightTrace, CopilotAdvice, CopilotStatus } from "./worker.ts";
 
 export type { RuntimeEvent, DecisionTrace } from "./telemetry.ts";

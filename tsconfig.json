@@ -41,6 +41,21 @@
       "@flight/experience": [
         "./packages/experience/src/index.ts"
       ],
+      "@flight/experience/fingerprint": [
+        "./packages/experience/src/fingerprint.ts"
+      ],
+      "@flight/experience/best-practice": [
+        "./packages/experience/src/best-practice.ts"
+      ],
+      "@flight/experience/xgboost-client": [
+        "./packages/experience/src/xgboost-client.ts"
+      ],
+      "@flight/learning": [
+        "./packages/learning/src/index.ts"
+      ],
+      "@flight/copilot": [
+        "./packages/copilot/src/index.ts"
+      ],
       "@flight/world-model": [
         "./packages/world-model/src/index.ts"
       ],

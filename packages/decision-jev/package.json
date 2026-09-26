@@ -1,1 +1,8 @@
-{"name":"@flight/decision-jev","type":"module","exports":"./src/index.ts"}
+{
+  "name": "@flight/decision-jev",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@typesafe-ai/sdk": "0.6.0"
+  }
+}
