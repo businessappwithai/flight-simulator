@@ -24,8 +24,11 @@ export function Readout({hud}:{hud:HudState}){
  return <div className="panel readout">{rows.map(([k,v])=><div key={k}><span className="k">{k}</span>{v}</div>)}</div>;
 }
 export function TopBar({hud,camera,panel,ai,onCamera,onPanel,onAi,onHelp,store}:{hud:HudState;camera:CameraMode;panel:boolean;ai:boolean;onCamera:()=>void;onPanel:()=>void;onAi:()=>void;onHelp:()=>void;store:SimStore}){
- const phase=hud.world?.objective.phase??"—";
- return <header className="top">
+ const phase=hud.world?.objective.phase??"—",ref=useRef<HTMLElement>(null);
+ // The bar wraps to one, two or three rows with the width; publish where it ends so the panels below it never cover its buttons.
+ useEffect(()=>{const el=ref.current;if(!el)return;const set=()=>document.documentElement.style.setProperty("--top-h",`${Math.ceil(el.getBoundingClientRect().bottom)}px`);
+  set();const ro=new ResizeObserver(set);ro.observe(el);return()=>ro.disconnect()},[]);
+ return <header className="top" ref={ref}>
   <div className="chips">
    <div className="chip panel opt"><b>FLIGHT WORLD</b></div>
    <div className="chip panel"><span className="k">MISSION</span><b className={`phase ${phase}`} data-testid="phase">{phase}</b></div>

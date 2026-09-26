@@ -48,7 +48,7 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline
 input[aria-invalid=true]{border-color:var(--bad)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 /* Jev key + learning: a small card under the top bar on the left. */
-.ai{position:fixed;left:var(--safe-l);top:calc(var(--safe-t) + 48px);width:min(300px,calc(100vw - var(--safe-l) - var(--safe-r)));padding:10px 12px;font-size:12px;line-height:1.45;max-height:calc(100vh - var(--dock-h) - 90px);overflow:auto}
+.ai{position:fixed;left:var(--safe-l);top:calc(var(--top-h,58px) + 8px);width:min(300px,calc(100vw - var(--safe-l) - var(--safe-r)));padding:10px 12px;font-size:12px;line-height:1.45;max-height:calc(100vh - var(--top-h,58px) - var(--dock-h) - 24px);overflow:auto}
 .ai header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.ai header b{font-size:13px}
 .ai .close{min-height:26px;padding:0 8px;font-size:16px;line-height:1}
 .ai .row{display:flex;gap:6px;align-items:center;justify-content:space-between}.ai form.row input{flex:1}
@@ -66,7 +66,7 @@ input[aria-invalid=true]{border-color:var(--bad)}
 @media (pointer:coarse){.pad{display:grid}}
 /* iPad portrait and small laptops: drop the duplicate text readout, keep instruments + map. */
 @media (max-width:1100px){.readout{display:none}}
-@media (max-width:900px){:root{--map:170px}.chip.opt{display:none}.ai{top:calc(var(--safe-t) + 92px)}}
+@media (max-width:900px){:root{--map:170px}.chip.opt{display:none}}
 /* Phones */
 @media (max-width:600px){:root{--map:112px;--dock-h:32vh}.buttons button{padding:5px 8px}.dock{align-items:flex-end}.banner{top:30%;font-size:17px}.pad{grid-template-columns:repeat(3,48px)}.pad button{height:44px}}
 @media (max-height:500px){:root{--dock-h:44vh;--map:130px}}
