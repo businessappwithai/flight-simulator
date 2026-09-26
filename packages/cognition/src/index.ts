@@ -80,8 +80,8 @@ export class ShuffledHistoryStrategy implements TemporalStrategy {
   }
 }
 
-export { CognitivePilot, observationFeatures, OBSERVATION_FEATURES_V1 } from "./pilot.ts";
-export type { BestPracticeAdvisor, PilotAdvisors, PilotDecision } from "./pilot.ts";
+export { CognitivePilot, observationFeatures, observationFeaturesV2, OBSERVATION_FEATURES_V1, OBSERVATION_FEATURES_V2, blendArbiter } from "./pilot.ts";
+export type { BestPracticeAdvisor, PilotAdvisors, PilotDecision, Arbiter, Arbitration } from "./pilot.ts";
 
 export { traceSummary } from "./trace.ts";
 export type { DecisionTrace } from "./trace.ts";
