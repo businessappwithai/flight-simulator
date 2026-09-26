@@ -3,7 +3,7 @@ import { disagreementScore, topCandidate, type DecisionEngineManager } from "@fl
 import { RingBuffer } from "@flight/memory";
 import type { TemporalStrategy } from "./index.ts";
 import type { ExperienceRepository } from "@flight/experience";
-import { situationFingerprint } from "@flight/experience";
+import { situationFingerprint } from "@flight/experience/fingerprint";
 import type { WorldModel } from "@flight/world-model";
 
 const CANDIDATES=["HOLD","TURN_LEFT","TURN_RIGHT","CLIMB","DESCEND","SLOW","REROUTE","ABORT"] as const;
@@ -18,6 +18,8 @@ export interface BestPracticeAdvisor{readonly source:string;predict(features:rea
 /** Below this top-candidate probability the primary provider is not confident enough to decide alone. */
 export const DEFAULT_MIN_PROVIDER_CONFIDENCE=.5;
 export interface PilotAdvisors{bestPractice?:BestPracticeAdvisor;worldModel?:WorldModel;timeoutMs?:number;horizonsSeconds?:readonly number[];
+ /** Time budget for the decision engines (default 250 ms; a remote Jev needs more). */
+ decisionTimeoutMs?:number;
  /** When the primary provider's top candidate is below this, the best-practice model's top intent decides (if it answered). */
  minProviderConfidence?:number}
 /** `provider` is who decided: the primary engine's provider, or the best-practice source when it took over. */
@@ -57,7 +59,7 @@ export class CognitivePilot {
     id:decisionId,
     context:{schemaVersion:1,observation,temporal:{recentActions:temporal.recentActions}},
     question:`Choose the safest useful maneuver. Similar experience: ${JSON.stringify(experiences)}`,
-    candidates:CANDIDATES,timeoutMs:250
+    candidates:CANDIDATES,timeoutMs:this.advisors.decisionTimeoutMs??250
    }),
    bestPractice?advise(bestPractice.source,timeoutMs,async()=>[...await bestPractice.predict(features)]):undefined,
    worldModel?advise(worldModel.id,timeoutMs,async()=>(await worldModel.imagine({values:features},CANDIDATES,this.advisors.horizonsSeconds??[1,3])).map(p=>({action:p.action,horizonSeconds:p.horizonSeconds,predictedRisk:p.predictedRisk,uncertainty:p.uncertainty,predictedReward:p.predictedReward.survival+p.predictedReward.separation+p.predictedReward.objective+p.predictedReward.stability+p.predictedReward.efficiency}))):undefined

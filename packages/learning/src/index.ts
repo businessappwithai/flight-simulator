@@ -1,7 +1,8 @@
-import type {LearningBook,LearningEntry,LearningInsight,LearningTally,Observation,PilotIntent,SimPilot} from "@flight/protocol";
+import type {LearningBook,LearningEntry,LearningExample,LearningInsight,LearningTally,Observation,PilotIntent,SimPilot} from "@flight/protocol";
+import type {BestPracticeExample} from "@flight/experience/best-practice";
 // Subpath import: the package index also exports the Bun SQLite store, which cannot load in a browser worker.
 import {situationFingerprint} from "@flight/experience/fingerprint";
-export {FlightTraceRecorder,MAX_TRACE_FRAMES} from "./trace.ts";
+export {FlightTraceRecorder,MAX_TRACE_FRAMES,MAX_ADVICE_FRAMES} from "./trace.ts";
 /**
  * Browser-side experience learning from manual and autopilot flying alike. While enabled, the recorder samples
  * (situation, intent, pilot) during a flight; when the flight lands or crashes it credits every sampled pair
@@ -9,7 +10,7 @@ export {FlightTraceRecorder,MAX_TRACE_FRAMES} from "./trace.ts";
  * so both pilots build the same book. The book is plain JSON so the page can keep it in localStorage.
  * Learning only observes: it never changes the controls the simulation applies.
  */
-export const MAX_ENTRIES=4000;
+export const MAX_ENTRIES=4000,MAX_EXAMPLES=2000,MAX_EXAMPLES_PER_FLIGHT=150,EXAMPLE_FEATURES=8;
 export const situationOf=situationFingerprint;
 const INTENTS:ReadonlySet<string>=new Set<PilotIntent>(["HOLD","TURN_LEFT","TURN_RIGHT","CLIMB","DESCEND","SLOW","REROUTE","ABORT"]);
 const SITUATION=/^[A-Z0-9_+]{1,200}$/;
@@ -37,20 +38,34 @@ export function parseBook(raw:unknown):LearningBook|undefined{
   const x=e as unknown as LearningEntry;if(x.successes+x.failures!==x.visits||x.manual+x.autopilot!==x.visits)return undefined;
   entries[k]={visits:x.visits,successes:x.successes,failures:x.failures,manual:x.manual,autopilot:x.autopilot};
  }
- return {version:2,flights:b.flights,landings:b.landings,crashes:b.crashes,manual,autopilot,entries};
+ let examples:LearningExample[]|undefined;
+ if(b.examples!==undefined){
+  if(!Array.isArray(b.examples)||b.examples.length>MAX_EXAMPLES)return undefined;
+  examples=[];
+  for(const x of b.examples as unknown[]){const e=x as Record<string,unknown>;
+   if(!e||!Array.isArray(e.f)||e.f.length!==EXAMPLE_FEATURES||!e.f.every(v=>typeof v==="number"&&Number.isFinite(v))||!INTENTS.has(String(e.a))||(e.ok!==0&&e.ok!==1))return undefined;
+   examples.push({f:[...e.f as number[]],a:e.a as PilotIntent,ok:e.ok})}
+ }
+ return {version:2,flights:b.flights,landings:b.landings,crashes:b.crashes,manual,autopilot,entries,...(examples?{examples}:{})};
+}
+/** The book's examples in the shape the XGBoost best-practice worker trains on. */
+export function trainingExamples(book:LearningBook):BestPracticeExample[]{
+ return (book.examples??[]).map(x=>({features:x.f,action:x.a,success:x.ok===1,reward:x.ok?1:-1,regret:x.ok?0:1,safetyOverride:false,catastrophic:false}));
 }
 export const learningKey=(situation:string,intent:PilotIntent)=>`${situation}|${intent}`;
 export class LearningRecorder{
  enabled=false;
- #book:LearningBook=emptyBook();#episode=new Map<string,Set<SimPilot>>();#closed=false;
+ #book:LearningBook=emptyBook();#episode=new Map<string,Set<SimPilot>>();#closed=false;#samples:{f:number[];a:PilotIntent}[]=[];
  get book():LearningBook{return this.#book}
  get experiences(){return Object.keys(this.#book.entries).length}
  load(book:LearningBook){this.#book=structuredClone(book)}
  clear(){this.#book=emptyBook();this.beginEpisode()}
  /** A new flight: anything sampled from an unfinished flight is discarded. */
- beginEpisode(){this.#episode.clear();this.#closed=false}
- observe(situation:string,intent:PilotIntent,pilot:SimPilot){
+ beginEpisode(){this.#episode.clear();this.#samples=[];this.#closed=false}
+ /** `features` (observationFeatures) also become XGBoost training examples when the flight ends. */
+ observe(situation:string,intent:PilotIntent,pilot:SimPilot,features?:readonly number[]){
   if(!this.enabled||this.#closed)return;const k=learningKey(situation,intent);
+  if(features?.length===EXAMPLE_FEATURES&&features.every(Number.isFinite))this.#samples.push({f:[...features],a:intent});
   const who=this.#episode.get(k);if(who)who.add(pilot);else this.#episode.set(k,new Set([pilot]));
  }
  /** Credits the flight's samples with its outcome, once. Returns false when there was nothing to learn. */
@@ -62,7 +77,11 @@ export class LearningRecorder{
   for(const [k,pilots] of this.#episode){const e=b.entries[k]??={visits:0,successes:0,failures:0,manual:0,autopilot:0};
    for(const p of pilots){flew.add(p);e.visits++;landed?e.successes++:e.failures++;p==="MANUAL"?e.manual++:e.autopilot++}}
   credit(b);if(flew.has("MANUAL"))credit(b.manual);if(flew.has("AUTOPILOT"))credit(b.autopilot);
-  this.#episode.clear();this.#prune();return true;
+  // An even spread over the flight, so long flights do not crowd out the rest.
+  const s=this.#samples,step=Math.max(1,Math.ceil(s.length/MAX_EXAMPLES_PER_FLIGHT)),ok:0|1=landed?1:0;
+  const add=s.filter((_,i)=>i%step===0).map(x=>({...x,ok}));
+  if(add.length)b.examples=[...(b.examples??[]),...add].slice(-MAX_EXAMPLES);
+  this.#episode.clear();this.#samples=[];this.#prune();return true;
  }
  /** Best-known intent for the current situation (highest landing rate, then most visits), from either pilot. */
  insight(o:Observation):LearningInsight|undefined{

@@ -62,6 +62,9 @@
     "packages/controller": {
       "name": "@flight/controller",
     },
+    "packages/copilot": {
+      "name": "@flight/copilot",
+    },
     "packages/counterfactual": {
       "name": "@flight/counterfactual",
     },
@@ -154,6 +157,8 @@
     "@flight/control-room": ["@flight/control-room@workspace:apps/control-room"],
 
     "@flight/controller": ["@flight/controller@workspace:packages/controller"],
+
+    "@flight/copilot": ["@flight/copilot@workspace:packages/copilot"],
 
     "@flight/counterfactual": ["@flight/counterfactual@workspace:packages/counterfactual"],
 

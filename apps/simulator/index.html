@@ -57,6 +57,8 @@ input[aria-invalid=true]{border-color:var(--bad)}
 .ai .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:8px 0;text-align:center}
 .ai .stats dt{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}.ai .stats dd{margin:0;font-weight:650}
 .ai .insight{color:#cfe6ff}.ai>button{width:100%}.ai .traces{margin:4px 0 8px}
+.ai .copilot{border-top:1px solid var(--line);margin-top:6px;padding-top:6px}.ai .copilot p{margin:3px 0}
+.ai .state{font-size:11px;padding:1px 6px;border-radius:6px;border:1px solid var(--line)}.ai .state.READY{color:var(--ok)}.ai .state.ERROR{color:var(--bad)}
 /* Start card: on the runway before the take-off roll; sits just above the dock. */
 .start{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-b) + var(--dock-h) + var(--gap));width:min(420px,calc(100vw - 30px));padding:14px 16px;text-align:center;font-size:13px}
 .start b{font-size:17px}.start p{margin:6px 0}.start-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px}.start-actions button{min-height:38px;font-size:13px}

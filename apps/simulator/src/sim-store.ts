@@ -1,4 +1,4 @@
-import type {FlightTrace,LearningBook,LearningInsight,PilotIntent,SimPilot,WorldSnapshot} from "@flight/protocol";
+import type {CopilotAdvice,CopilotStatus,FlightTrace,LearningBook,LearningInsight,PilotIntent,SimPilot,WorldSnapshot} from "@flight/protocol";
 import {SimulationWorkerClient,type WorldEvent} from "./worker-client.ts";
 /**
  * Single source of truth for the presentation layer. Holds only protocol snapshots received from the
@@ -11,7 +11,9 @@ export interface HudState{world?:WorldSnapshot;pilot:SimPilot;intent:PilotIntent
  /** False while the aircraft waits on the runway: the simulation clock does not run until the pilot starts. */
  started:boolean;jevKeyHint?:string;learning:LearningSummary;insight?:LearningInsight;
  /** Recent flights kept as Control Room telemetry, newest last. */
- traces:{flights:number;manual:number;autopilot:number}}
+ traces:{flights:number;manual:number;autopilot:number};
+ /** Jev copilot: its latest recommendation and the Jev / XGBoost status (only while a key is saved). */
+ copilot?:CopilotAdvice;copilotStatus?:CopilotStatus}
 /**
  * Browser persistence. Every access is guarded: storage can be disabled (private mode, blocked site data) or
  * full, and the simulator must keep flying either way.
@@ -56,7 +58,7 @@ export class SimStore{
    if(e.type==="TRACE"){this.#traced(e.trace);return}
    if(e.type!=="WORLD")return;const prev=this.latest?.world;
    this.turnDt=prev?Number(e.world.tick-prev.tick)/120:0;this.prevHeading=prev?.aircraft.heading;this.latest=e;this.#phase(e.world);this.#dirty=true});
-  this.client.send({type:"SET_LEARNING",enabled:!!this.jevKey});
+  this.client.send({type:"SET_LEARNING",enabled:!!this.jevKey});this.client.send({type:"SET_JEV",apiKey:this.jevKey??null});
   this.#hud=this.#snapshot();this.restart();
   // After the first restart, which clears banners: a warning about unreadable saved learning must stay visible.
   this.#loadLearning();this.#loadTraces();
@@ -67,6 +69,7 @@ export class SimStore{
  #notify(force=false){const now=performance.now();if(!force&&(!this.#dirty||now-this.#lastNotify<100))return;this.#lastNotify=now;this.#dirty=false;this.#hud=this.#snapshot();for(const l of this.#listeners)l()}
  #snapshot():HudState{const l=this.latest;return {world:l?.world,pilot:this.pilot,intent:this.intent,autopilotMode:l?.autopilotMode??"",scenarioId:l?.scenarioId??"—",paused:this.paused,rate:this.rate,fps:this.fps,simRate:this.simRate,checksum:this.client.checksum,banner:this.#banner,error:this.#error,version:(this.#hud?.version??0)+1,
   started:this.started,jevKeyHint:this.jevKey?`••••${this.jevKey.slice(-4)}`:undefined,learning:this.learning,insight:this.jevKey?l?.insight:undefined,
+  copilot:this.jevKey?l?.copilot:undefined,copilotStatus:this.jevKey?l?.copilotStatus:undefined,
   traces:{flights:this.traces.length,manual:this.traces.filter(t=>t.pilots.includes("MANUAL")).length,autopilot:this.traces.filter(t=>t.pilots.includes("AUTOPILOT")).length}}}
  onReset(l:()=>void){this.#resetListeners.add(l);return()=>{this.#resetListeners.delete(l)}}
  // ---- Called once per rendered frame by the R3F SimulationDriver.
@@ -96,10 +99,10 @@ export class SimStore{
  saveJevKey(raw:string):string|undefined{
   const key=raw.trim(),problem=jevKeyProblem(key);if(problem)return problem;
   if(!storage.set(JEV_KEY_STORAGE,key))return "This browser blocked saving the key (storage is disabled or full).";
-  this.jevKey=key;this.client.send({type:"SET_LEARNING",enabled:true});this.toast("Jev key saved — autopilot and learning are on",2600);this.#notify(true);return undefined;
+  this.jevKey=key;this.client.send({type:"SET_LEARNING",enabled:true});this.client.send({type:"SET_JEV",apiKey:key});this.toast("Jev key saved — autopilot and learning are on",2600);this.#notify(true);return undefined;
  }
  removeJevKey(){
-  storage.remove(JEV_KEY_STORAGE);this.jevKey=undefined;this.client.send({type:"SET_LEARNING",enabled:false});
+  storage.remove(JEV_KEY_STORAGE);this.jevKey=undefined;this.client.send({type:"SET_LEARNING",enabled:false});this.client.send({type:"SET_JEV",apiKey:null});
   if(this.pilot==="AUTOPILOT"){this.pilot="MANUAL";this.client.pilot("MANUAL");this.setIntent("HOLD")}
   this.toast("Jev key removed — manual control only",2600);this.#notify(true);
  }

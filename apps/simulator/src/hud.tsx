@@ -72,6 +72,19 @@ export function StartPanel({hud,store}:{hud:HudState;store:SimStore}){
   {!hud.jevKeyHint&&<p className="k">The autopilot needs a Jev key. Manual flying always works.</p>}
  </div>;
 }
+const said=(i:string)=>i.replaceAll("_"," ").toLowerCase(),pc=(x:number)=>`${Math.round(x*100)}%`;
+/** The Jev copilot: what it recommends now, who decided (Jev, or XGBoost when Jev was unsure), and its health. */
+function Copilot({hud}:{hud:HudState}){
+ const a=hud.copilot,s=hud.copilotStatus,x=s?.xgboost;
+ return <div className="copilot" data-testid="copilot">
+  <div className="row"><b>Copilot</b><span className={`state ${s?.jev??"OFF"}`} data-testid="jev-status">{s?.jev==="READY"?`Jev ${s.model??"connected"}`:s?.jev==="ERROR"?"Jev unreachable":"Jev starting…"}</span></div>
+  {a?<p data-testid="copilot-advice">Recommends <b>{said(a.intent)}</b>{a.source==="JEV"?<> · Jev {pc(a.confidence)}</>:<> · XGBoost {pc(a.confidence)}{a.jevConfidence!==undefined&&<span className="k"> (Jev unsure: {pc(a.jevConfidence)})</span>}</>}
+   <span className="k"> · flying {said(a.flown)} · {a.latencyMs} ms</span></p>
+   :<p className="k" data-testid="copilot-advice">{hud.started?"Waiting for a recommendation…":"Recommends once the flight starts."}</p>}
+  {s?.jev==="ERROR"&&s.detail&&<p className="problem" data-testid="jev-error">{s.detail}</p>}
+  <p className="k" data-testid="xgb-status">XGBoost: {x?.trained?`trained on ${x.examples} examples (${x.version})`:x?.detail??"waiting for a finished flight"}</p>
+ </div>;
+}
 /** Jev key entry/removal and the learning kept in this browser. */
 export function AiPanel({hud,store,onClose}:{hud:HudState;store:SimStore;onClose:()=>void}){
  const [key,setKey]=useState(""),[problem,setProblem]=useState<string>(),[confirm,setConfirm]=useState(false);
@@ -94,6 +107,7 @@ export function AiPanel({hud,store,onClose}:{hud:HudState;store:SimStore;onClose
   <p className="k" data-testid="learning-sources" title="A flight flown by both pilots counts for each">From {l.manualFlights} manual and {l.autopilotFlights} autopilot {l.manualFlights+l.autopilotFlights===1?"flight":"flights"}</p>
   {hud.insight&&<p className="insight" data-testid="insight">Best known here: <b>{hud.insight.action.replaceAll("_"," ").toLowerCase()}</b> · landed {Math.round(hud.insight.successRate*100)}% of {hud.insight.visits}
    <span className="k"> ({[hud.insight.manual&&`${hud.insight.manual} manual`,hud.insight.autopilot&&`${hud.insight.autopilot} autopilot`].filter(Boolean).join(", ")})</span></p>}
+  {on&&<Copilot hud={hud}/>}
   <div className="row traces" data-testid="traces">
    <span title="Recent flights as Control Room telemetry">Traces: <b>{hud.traces.flights}</b> <span className="k">({hud.traces.manual} manual, {hud.traces.autopilot} autopilot)</span></span>
    <button onClick={()=>store.downloadTraces()} disabled={!hud.traces.flights} data-testid="traces-download" title="JSONL for the Control Room replay">Download</button>

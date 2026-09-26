@@ -84,3 +84,13 @@ test("without learning (no Jev key) flights are neither learned nor traced",asyn
  const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:1});await next("WORLD",from);w.postMessage({type:"RESET",seed:"1"});await Bun.sleep(100);
  expect(inbox.some(x=>x.type==="TRACE"||x.type==="LEARNING")).toBe(false);
 }finally{w.terminate()}});
+test("the Jev copilot switches with SET_JEV and never changes the flight, even when Jev is unreachable",async()=>{const {w,inbox,next}=worker();try{
+ w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});w.postMessage({type:"SET_LEARNING",enabled:true});await next("WORLD");
+ let from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:"not-a-real-key-000"});const on=await next("WORLD",from);expect(on.copilotStatus).toMatchObject({jev:"READY"});
+ // An unreachable endpoint (the key goes nowhere real): the copilot reports it; the autopilot flies on regardless.
+ let seq=0,last:any;for(let i=0;i<200;i++){from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
+ expect(last.world.objective.phase).toBe("COMPLETE");
+ from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);expect(chk.checksum).toBe((await direct(defaultScenario(1n))).chk);
+ from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:null});const off=await next("WORLD",from);expect(off.copilotStatus).toBeUndefined();
+ from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:42});expect((await next("ERROR",from)).message).toBe("invalid Jev key");
+}finally{w.terminate()}},60_000);
