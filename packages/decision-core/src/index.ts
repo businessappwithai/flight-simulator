@@ -175,3 +175,4 @@ export function disagreementScore<T extends string>(bundle:ShadowDecision<T>):nu
 export { ResilientDecisionEngine } from "./resilience.ts";
 
 export { withTimeout, DecisionTimeoutError } from "./timeout.ts";
+export { RuleBasedDecisionEngine } from "./rule-based.ts";

@@ -172,3 +172,18 @@ bun --port 3100 apps/inspector/index.html & bun apps/simulator/serve.ts --port 3
 node .gstack/qa-reports/scripts/simulator-qa.mjs                    # 3D simulator browser QA (playwright)
 OUT=/tmp TAG=run node .gstack/qa-reports/scripts/browser-qa.mjs     # needs playwright; Chromium at /opt/pw-browsers
 ```
+
+## Learning Lab (2026-09-26)
+
+Browser QA of the new Control Room "Learning Lab" (`#lab`) via `.gstack/qa-reports/scripts/lab-qa.mjs` at 1180×820,
+820×1180 and 768×1024: runs "Quick look", "Shadow (control)" and weight 0.6; selects generations, flights and decisions
+(map tap, profile tap, ◀/▶, arrow keys); switches the traced action and model; scrubs the flight. All runs completed,
+no console errors, no horizontal overflow. Screenshots in `screenshots/lab/`.
+
+Findings fixed during QA: overlapping decision markers intercepted clicks (now nearest-decision pick plus prev/next
+and arrow keys); the gate-height label clipped at the top of the altitude profile; settings inputs lost focus on each
+keystroke (nested component remounting).
+
+Verified that the tree trace computed in the browser reproduces the advisor probability recorded during flight.
+Headless experiment: at XGBoost weight 0.6, balloon collisions fell from ~17% (shadow control) to 0% over the run,
+with a trade-off in gate-reach rate.

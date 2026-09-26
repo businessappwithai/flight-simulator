@@ -115,6 +115,9 @@
       ],
       "@flight/config": [
         "./packages/config/src/index.ts"
+      ],
+      "@flight/lab": [
+        "./packages/lab/src/index.ts"
       ]
     },
     "jsx": "react-jsx"

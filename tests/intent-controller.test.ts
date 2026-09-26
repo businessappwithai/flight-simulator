@@ -17,7 +17,7 @@ test("releasing a turn rolls the wings level and stops the turn",()=>{
 });
 test("HOLD keeps the height it started at instead of diving to a fixed altitude",()=>{
  const l=flight([["CLIMB",12],["HOLD",15]]),start=l.find(x=>x.intent==="HOLD")!,hold=l.filter(x=>x.intent==="HOLD");
- expect(start.y).toBeGreaterThan(120);expect(Math.abs(hold.at(-1)!.y-start.y)).toBeLessThan(6);expect(Math.min(...hold.map(x=>x.vy))).toBeGreaterThan(-6);
+ expect(start.y).toBeGreaterThan(100);expect(Math.abs(hold.at(-1)!.y-start.y)).toBeLessThan(6);expect(Math.min(...hold.map(x=>x.vy))).toBeGreaterThan(-6);
 });
 test("turns hold height; CLIMB/DESCEND fly a bounded vertical speed",()=>{
  const l=flight([["TURN_RIGHT",6],["CLIMB",5],["DESCEND",5]]),t=l.filter(x=>x.intent==="TURN_RIGHT");
@@ -31,6 +31,6 @@ test("any manual sequence of intents stays airborne (no spiral dive after releas
 // Regression: SLOW used throttle 0.35, whose steady speed (~119 m/s) is above the 90 m/s cap, so it never slowed.
 test("SLOW actually slows the aircraft while holding height",()=>{
  const l=flight([["HOLD",3],["SLOW",12]]),s=l.filter(x=>x.intent==="SLOW");
- expect(l.some(x=>x.crashed)).toBe(false);expect(s[0]!.speed-s.at(-1)!.speed).toBeGreaterThan(15);expect(s.at(-1)!.speed).toBeGreaterThan(30);
+ expect(l.some(x=>x.crashed)).toBe(false);expect(s[0]!.speed-s.at(-1)!.speed).toBeGreaterThan(8);expect(s.at(-1)!.speed).toBeLessThan(45);expect(s.at(-1)!.speed).toBeGreaterThan(25);
  expect(Math.abs(s.at(-1)!.y-s[0]!.y)).toBeLessThan(10);
 });

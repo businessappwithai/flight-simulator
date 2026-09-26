@@ -78,3 +78,8 @@ export type { BestPracticeModelRecord, ModelState } from "./model-registry.ts";
 
 export { summarizeShadow } from "./shadow-evaluator.ts";
 export type { ShadowCase, ShadowSummary } from "./shadow-evaluator.ts";
+
+export { OutcomeModel, DEFAULT_OUTCOME_PARAMS, validateParams, evaluateScores, auc } from "./outcome-model.ts";
+export type { OutcomeModelParams, OutcomeEvaluation } from "./outcome-model.ts";
+export { explainPrediction, importance as xgbImportance, treeDepths, nodeValues, traceTree, sigmoid } from "./xgb-trees.ts";
+export type { PredictionTrace, TreeTrace, PathStep, FeatureImportance, XgbModelJson } from "./xgb-trees.ts";

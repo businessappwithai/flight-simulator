@@ -25,7 +25,7 @@ jobs:
           bun-version: latest
       - run: bun install
       - run: bun run simulator:build
-      - run: bun build apps/control-room/index.html --outdir dist/simulator/control-room --minify
+      - run: bun run control-room:build --outdir dist/simulator/control-room
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist/simulator

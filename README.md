@@ -45,6 +45,15 @@ Laid out for iPad and larger (portrait and landscape) with an on-screen yoke on 
 Control Room (React): `bun run control-room` → http://localhost:3100 — replay recorded JSONL telemetry, step or
 play it, and inspect each decision in the "Why?" card.
 
+Learning Lab: http://localhost:3100/#lab (the "Learning Lab" tab). Configure the XGBoost outcome model (tree depth,
+trees, eta, min child weight, subsampling, λ), how much it steers the decision provider (weight, ramp, sampling vs
+best-only), the flights and the label horizon, then run generations of fly → judge → retrain in a Web Worker
+(`packages/lab`). Learning curves compare runs (gate rate, balloon collisions, good decisions, holdout AUC/log-loss,
+overrides, how often XGBoost changed Jev's choice). Drill into any flight: a top-down flight capture and altitude
+profile with every decision marked, and for each decision Jev's distribution, XGBoost's P(success) per action, the
+blend, the measured outcome, additive feature contributions, and the exact path through each tree. Without a Jev
+service the local rule-based provider stands in; an Open-Jev endpoint can be configured.
+
 - Scenery generated in code: atmospheric sky and sun, haze, patchwork farmland, forests, farms, a lake and river,
   hills and snow-capped mountains beyond the flying area (the physics ground is flat inside it, so nothing you see
   contradicts the collision model), clouds, and an airfield with a marked runway 18/36, taxiway, apron, hangars,

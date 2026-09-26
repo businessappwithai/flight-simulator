@@ -11,8 +11,10 @@ export class ObservableFlightRuntime{
  readonly controller=new IntentController();readonly safety=new SafetySupervisor();
  readonly events=new RuntimeEventBus();readonly outcomes=new OutcomeTracker(this.events);
  #learning:Promise<void>[]=[];
- constructor(readonly pilot:CognitivePilot){this.events.subscribe(e=>{if(e.type==="OUTCOME")this.#learning.push(this.pilot.recordOutcome(e.decisionId,e.horizon,e.reward))})}
- async run(scenario:Scenario,maxTicks=7200){
+ /** decisionIntervalTicks: simulation ticks between decisions (120 Hz; default 30 = 4 decisions per second). */
+ constructor(readonly pilot:CognitivePilot,readonly decisionIntervalTicks=30){this.events.subscribe(e=>{if(e.type==="OUTCOME")this.#learning.push(this.pilot.recordOutcome(e.decisionId,e.horizon,e.reward))})}
+ /** onStep is called after every simulation tick with the new world (e.g. to capture a flight track). */
+ async run(scenario:Scenario,maxTicks=7200,onStep?:(world:WorldSnapshot)=>void){
   let world=this.sim.reset(scenario);let active:any={intent:"HOLD",until:0};const frames:DecisionFrame[]=[];
   for(let i=0;i<maxTicks;i++){
    if(i>=active.until){
@@ -20,9 +22,9 @@ export class ObservableFlightRuntime{
     const frame:DecisionFrame={id:d.decisionId,startTick:this.sim.tick,requestedIntent:d.intent,executedIntent:safe.executed,provider:d.provider,probability:d.probability,evidence:safe.overridden?{...d.evidence,safetyReason:safe.reason??"UNKNOWN"}:d.evidence};
     frames.push(frame);this.pilot.remember(frame);this.events.publish({type:"DECISION",frame});this.outcomes.start(frame.id,world);
     if(safe.overridden)this.events.publish({type:"SAFETY_OVERRIDE",decisionId:frame.id,requested:d.intent,executed:safe.executed,reason:safe.reason??"UNKNOWN"});
-    active={intent:safe.executed,until:i+30};
+    active={intent:safe.executed,until:i+Math.max(1,Math.floor(this.decisionIntervalTicks))};
    }
-   world=this.sim.step(this.controller.controls(active.intent,this.sensors.observe(world)));this.outcomes.observe(world);
+   world=this.sim.step(this.controller.controls(active.intent,this.sensors.observe(world)));this.outcomes.observe(world);onStep?.(world);
    if(world.objective.phase==="COMPLETE"||world.objective.phase==="FAILED")break;
   }
   const learning=this.#learning;this.#learning=[];await Promise.all(learning);

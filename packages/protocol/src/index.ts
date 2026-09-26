@@ -59,6 +59,12 @@ export interface Observation {
     readonly distance: number;
     readonly bearing: number;
   };
+  /** Current objective (the gate while OUTBOUND, the runway on RETURN): distance (m), relative bearing (rad), height above it (m). */
+  readonly objective?: {
+    readonly distance: number;
+    readonly bearing: number;
+    readonly heightAbove: number;
+  };
   /** Aircraft attitude (radians) and vertical speed (m/s); lets the controller stabilise intents. */
   readonly attitude?: {
     readonly pitch: number;
@@ -131,6 +137,18 @@ export interface DecisionEvidence {
   readonly bestPractice?: AdvisorEvidence<readonly { readonly action: PilotIntent; readonly probability: number }[]>;
   readonly worldModel?: AdvisorEvidence<readonly { readonly action: PilotIntent; readonly horizonSeconds: number; readonly predictedRisk: number; readonly uncertainty: number; readonly predictedReward: number }[]>;
   readonly safetyReason?: string;
+  /** How the final intent was chosen when the provider and an advisor are blended (absent = provider's top choice). */
+  readonly arbitration?: {
+    readonly advisorWeight: number;
+    readonly selection: "argmax" | "sample";
+    readonly scores: readonly { readonly intent: PilotIntent; readonly provider: number; readonly advisor?: number; readonly blended: number }[];
+    readonly providerTop: PilotIntent;
+    readonly chosen: PilotIntent;
+    /** The advisor moved the best blended choice away from the provider's top intent. */
+    readonly changedByAdvisor: boolean;
+    /** Sampling (exploration) picked something other than the best blended choice. */
+    readonly explored: boolean;
+  };
   /**
    * Who chose the intent. The primary provider (Jev/Open-Jev) decides when its top candidate reaches
    * `threshold`; below it the best-practice (XGBoost) model's highest-ranked intent is used when it answered.
@@ -160,3 +178,6 @@ export interface TemporalSummary {
 export type { SimCommand, SimEvent, SimPilot, InspectorCommand, LearningBook, LearningEntry, LearningInsight, LearningTally, LearningExample, FlightTrace, CopilotAdvice, CopilotStatus } from "./worker.ts";
 
 export type { RuntimeEvent, DecisionTrace } from "./telemetry.ts";
+
+export type { LabConfig, LabModelParams, LabEvaluation, LabMetrics, LabEpisodeSummary, LabImportance, LabTraining, LabGenerationSummary,
+  LabTrackPoint, LabDecision, LabEpisodeDetail, LabTreeStep, LabExplanation, LabCommand, LabEvent } from "./lab.ts";

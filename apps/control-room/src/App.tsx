@@ -2,6 +2,8 @@ import {useEffect,useRef,useState,useSyncExternalStore} from "react";
 import type {DashboardStore,DashboardView} from "./dashboard-store.ts";
 import type {DecisionWhy} from "./live-dashboard.ts";
 import {explanationIntegrity} from "./explanation-integrity.ts";
+import {LabView} from "./lab/LabView.tsx";
+import type {LabStore} from "./lab/lab-store.ts";
 // All text below is rendered by React (escaped). Telemetry, including replay files, is untrusted input.
 const pct=(x:number)=>`${(x*100).toFixed(1)}%`;
 const Bar=({value}:{value:number})=><div className="bar"><i style={{width:`${Math.max(0,Math.min(100,value*100))}%`}}/></div>;
@@ -10,7 +12,7 @@ function Header({v,store,fileRef}:{v:DashboardView;store:DashboardStore;fileRef:
  const status=v.mode==="REPLAY"?`replay ${v.replayPosition.index}/${v.replayPosition.total} events · ${v.metrics.decisions} decisions`:v.metrics.decisions?`${v.metrics.decisions} decisions observed`:"waiting for telemetry";
  const download=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([store.exportJsonl()],{type:"application/x-ndjson"}));a.download="flight-world-telemetry.jsonl";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
  return <header className="header">
-  <div className="title"><strong>Flight World Control Room</strong><span className={`badge ${v.mode}`} data-testid="mode">{badge}</span><span className="muted" data-testid="status">{status}</span></div>
+  <div className="title"><strong>Replay & Why</strong><span className={`badge ${v.mode}`} data-testid="mode">{badge}</span><span className="muted" data-testid="status">{status}</span></div>
   <nav className="actions">
    <button onClick={()=>store.togglePause()} aria-pressed={v.paused}>{v.paused?"Resume UI":"Pause UI"}</button>
    <button onClick={()=>store.follow()} aria-pressed={!v.pinned}>{v.pinned?"Resume live":"Following latest"}</button>
@@ -72,7 +74,20 @@ function WhyPanel({v,panelRef}:{v:DashboardView;panelRef:React.RefObject<HTMLEle
   <div className="muted" data-testid="pin">{v.pinned?`Pinned: ${v.pinned}`:"Following latest decision"}</div>
  </aside>;
 }
-export function App({store}:{store:DashboardStore}){
+type View="replay"|"lab";
+const viewFromHash=():View=>location.hash==="#lab"?"lab":"replay";
+/** Two views: "Replay & Why" (recorded telemetry) and the Learning Lab (fly, learn, trace). #lab deep-links the lab. */
+export function App({store,lab}:{store:DashboardStore;lab:LabStore}){
+ const [view,setView]=useState<View>(viewFromHash);
+ useEffect(()=>{const on=()=>setView(viewFromHash());window.addEventListener("hashchange",on);return()=>window.removeEventListener("hashchange",on)},[]);
+ const go=(v:View)=>{history.replaceState(null,"",v==="lab"?"#lab":location.pathname+location.search);setView(v)};
+ return <>
+  <nav className="views" aria-label="Control Room views"><strong>Flight World Control Room</strong>
+   <div className="seg" role="tablist">{([["replay","Replay & Why"],["lab","Learning Lab"]] as const).map(([k,t])=><button key={k} role="tab" aria-selected={view===k} className={view===k?"on":""} onClick={()=>go(k)}>{t}</button>)}</div></nav>
+  {view==="lab"?<LabView store={lab}/>:<ReplayView store={store}/>}
+ </>;
+}
+function ReplayView({store}:{store:DashboardStore}){
  const v=useSyncExternalStore(store.subscribe,store.getSnapshot),file=useRef<HTMLInputElement>(null),side=useRef<HTMLElement>(null);
  useEffect(()=>store.attachLive(window),[store]);
  // On narrow (portrait tablet) layouts the Why card sits below the timeline: bring it into view when picking.
