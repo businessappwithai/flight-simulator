@@ -86,7 +86,10 @@ test("without learning (no Jev key) flights are neither learned nor traced",asyn
 }finally{w.terminate()}});
 test("the Jev copilot switches with SET_JEV and never changes the flight, even when Jev is unreachable",async()=>{const {w,inbox,next}=worker();try{
  w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});w.postMessage({type:"SET_LEARNING",enabled:true});await next("WORLD");
- let from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:"not-a-real-key-000"});const on=await next("WORLD",from);expect(on.copilotStatus).toMatchObject({jev:"READY"});
+ let from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:"not-a-real-key-000"});
+ // SET_LEARNING also publishes a WORLD that may still be in flight: wait for the one SET_JEV produced.
+ let on:any;for(let i=0;i<400&&!on;i++){on=inbox.slice(from).find(x=>x.type==="WORLD"&&x.copilotStatus);if(!on)await Bun.sleep(5)}
+ expect(on?.copilotStatus).toMatchObject({jev:"READY"});
  // An unreachable endpoint (the key goes nowhere real): the copilot reports it; the autopilot flies on regardless.
  let seq=0,last:any;for(let i=0;i<200;i++){from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
  expect(last.world.objective.phase).toBe("COMPLETE");
