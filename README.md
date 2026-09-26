@@ -29,6 +29,12 @@ bun run simulator:build    # static build in dist/simulator (host anywhere; work
 bun run research           # R-series research CLI
 ```
 
+GitHub Pages (`.github/workflows/pages.yml`): every push to `main` publishes the simulator at
+`https://<owner>.github.io/<repo>/` with the Control Room at `…/control-room/`, then a browser smoke test
+(`.github/scripts/pages-smoke.mjs`) flies it on the live site and uploads screenshots as the
+`pages-screenshots` run artifact. Pull requests run the same test against the built files without deploying.
+One-time setup: Settings → Pages → Source: **GitHub Actions**.
+
 ## 3D simulator (apps/simulator)
 
 A desktop-flight-sim style view of the deterministic simulation, built with React + React Three Fiber + Three.js;
