@@ -25,7 +25,8 @@ onmessage=async({data}:MessageEvent<SimCommand>)=>{
    case "SET_LEARNING":if(typeof data.enabled!=="boolean")throw new Error(`invalid learning flag ${String(data.enabled)}`);learner.enabled=data.enabled;publish();return;
    case "LOAD_LEARNING":{const book=parseBook(data.book);
     if(!book){learner.clear();emit({type:"LEARNING",book:emptyBook(),reason:"REJECTED"});return}
-    learner.load(book);emit({type:"LEARNING",book:learner.book,reason:"LOADED"});return}
+    // Publish too: a parked aircraft does not step, so this is how the page gets the learned insight.
+    learner.load(book);emit({type:"LEARNING",book:learner.book,reason:"LOADED"});publish();return}
    case "CLEAR_LEARNING":learner.clear();emit({type:"LEARNING",book:learner.book,reason:"CLEARED"});publish();return;
    case "SET_INTENT":if(!INTENTS.has(data.intent))throw new Error(`unknown intent ${String(data.intent)}`);intent=data.intent;return;
    case "SET_PILOT":if(data.pilot!=="AUTOPILOT"&&data.pilot!=="MANUAL")throw new Error(`unknown pilot ${String(data.pilot)}`);pilot=data.pilot;return;

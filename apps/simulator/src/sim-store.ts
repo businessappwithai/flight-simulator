@@ -47,8 +47,10 @@ export class SimStore{
    if(e.type==="LEARNING"){this.#learned(e.book,e.reason);return}
    if(e.type!=="WORLD")return;const prev=this.latest?.world;
    this.turnDt=prev?Number(e.world.tick-prev.tick)/120:0;this.prevHeading=prev?.aircraft.heading;this.latest=e;this.#phase(e.world);this.#dirty=true});
-  this.#loadLearning();this.client.send({type:"SET_LEARNING",enabled:!!this.jevKey});
+  this.client.send({type:"SET_LEARNING",enabled:!!this.jevKey});
   this.#hud=this.#snapshot();this.restart();
+  // After the first restart, which clears banners: a warning about unreadable saved learning must stay visible.
+  this.#loadLearning();
  }
  // ---- React subscription (useSyncExternalStore); notifications are throttled to ~10 Hz.
  subscribe=(l:()=>void)=>{this.#listeners.add(l);return()=>{this.#listeners.delete(l)}};
