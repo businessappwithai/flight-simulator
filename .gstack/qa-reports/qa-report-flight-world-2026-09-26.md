@@ -62,9 +62,23 @@ On a 390×844 phone the on-screen yoke sat on top of **Start (manual)**, so the 
 - **Manual flight regression:** without a key, holding `W` starts the take-off roll and climbs above 10 m. The touch yoke flies the aircraft on phone and iPad. The panel closes.
 - **Console:** no application errors (SwiftShader "GPU stall" driver warnings excluded).
 
+## Follow-up: manual and autopilot both feed learning and traces (commit 802e495)
+
+Re-ran the full script after the change; **66/66 checks pass**. New checks:
+
+- The autopilot flight is credited to the autopilot and stored as pilot intents (`CLIMB`, `HOLD`, `TURN_*`, `DESCEND`, `SLOW`), not autopilot modes.
+- A flight started by hand (`W` to climb out) and handed to the autopilot (`A`) lands and is credited to **both** pilots: 1 manual + 2 autopilot flights, with pairs flown by both (`06b-mixed-flight-learned`).
+- A restarted manual flight becomes an `ABANDONED` trace and teaches nothing.
+- **Download** produces `flight-traces-*.jsonl` (3 flights, bigint ticks as `"123n"`), and the Control Room replays it with manual and autopilot decisions and their terminal outcomes (`06c-control-room-replay`).
+- Clear removes traces too, and the restart that follows does not re-add one.
+
+### ISSUE-004: panel covered the Start card on phones — medium, UX — fixed
+
+The per-pilot learning line and traces row made the panel overlap the Start card (and the yoke once flying) on a 390×844 touch phone. The copy is shorter now, and on touch phones the panel height is capped so it scrolls above that area. The script now also checks panel vs. yoke while flying.
+
 ## Not tested
 
 - The key is not sent to any Jev service: this repository defines no TypeSafe Jev API (see LOCAL_RUN.md), so the key gates the autopilot and learning locally.
 - Real GPU performance and frame rate.
 
-> QA found 3 issues, fixed 3, health score 97 → 100.
+> QA found 4 issues, fixed 4, health score 97 → 100.
