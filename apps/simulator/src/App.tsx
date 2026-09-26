@@ -73,7 +73,8 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
   {ai&&<AiPanel hud={hud} store={store} onClose={()=>setAi(false)}/>}
   <StartPanel hud={hud} store={store}/>
   <ErrorBox hud={hud}/><Banner hud={hud}/>
-  <TouchPad store={store}/>
+  {/* Parked on the runway the Start card offers the same action, and on phones the yoke would cover it. */}
+  {hud.started&&<TouchPad store={store}/>}
   {options.hud&&<footer className="dock"><Readout hud={hud}/>{panel&&<Instruments store={store}/>}<MovingMap store={store}/></footer>}
   {help&&<Help onClose={()=>setHelp(false)}/>}
  </>;
