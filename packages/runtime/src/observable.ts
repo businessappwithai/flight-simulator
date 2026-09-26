@@ -19,7 +19,7 @@ export class ObservableFlightRuntime{
   for(let i=0;i<maxTicks;i++){
    if(i>=active.until){
     const obs=this.sensors.observe(world),d=await this.pilot.decide(obs),safe=this.safety.evaluate(d.intent,obs);
-    const frame:DecisionFrame={id:d.decisionId,startTick:this.sim.tick,requestedIntent:d.intent,executedIntent:safe.executed,provider:this.pilot.engines.primary.identity.provider,probability:d.probability,evidence:safe.overridden?{...d.evidence,safetyReason:safe.reason??"UNKNOWN"}:d.evidence};
+    const frame:DecisionFrame={id:d.decisionId,startTick:this.sim.tick,requestedIntent:d.intent,executedIntent:safe.executed,provider:d.provider,probability:d.probability,evidence:safe.overridden?{...d.evidence,safetyReason:safe.reason??"UNKNOWN"}:d.evidence};
     frames.push(frame);this.pilot.remember(frame);this.events.publish({type:"DECISION",frame});this.outcomes.start(frame.id,world);
     if(safe.overridden)this.events.publish({type:"SAFETY_OVERRIDE",decisionId:frame.id,requested:d.intent,executed:safe.executed,reason:safe.reason??"UNKNOWN"});
     active={intent:safe.executed,until:i+Math.max(1,Math.floor(this.decisionIntervalTicks))};

@@ -6,3 +6,5 @@ export class JevDecisionEngine implements DecisionEngine{
  decide<T extends string>(request:DecisionRequest<T>){return this.transport.invoke(request)}
  async health():Promise<DecisionEngineHealth>{return this.transport.health?.()??{healthy:true,detail:"transport exposes no health probe"}}
 }
+export { TypeSafeJevTransport, INTENT_CRITERIA, jevState } from "./typesafe.ts";
+export type { TypeSafeJevOptions } from "./typesafe.ts";

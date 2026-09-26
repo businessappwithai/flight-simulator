@@ -14,7 +14,8 @@ export async function buildLabWorker():Promise<string>{
  return r.outputs[0]!.text();
 }
 if(import.meta.main){
- const out=join(root,"dist/control-room");
+ // --outdir <dir> (relative to the repo root) lets the Pages deploy nest the Control Room under the simulator site.
+ const i=Bun.argv.indexOf("--outdir"),out=join(root,i>0&&Bun.argv[i+1]?Bun.argv[i+1]!:"dist/control-room");
  const page=await Bun.build({entrypoints:[join(import.meta.dir,"index.html")],outdir:out,minify:true,target:"browser"});
  if(!page.success){console.error(page.logs);process.exit(1)}
  await Bun.write(join(out,"lab.worker.js"),await buildLabWorker());

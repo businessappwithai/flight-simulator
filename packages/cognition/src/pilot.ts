@@ -3,7 +3,7 @@ import { disagreementScore, topCandidate, type DecisionEngineManager } from "@fl
 import { RingBuffer } from "@flight/memory";
 import type { TemporalStrategy } from "./index.ts";
 import type { ExperienceRepository } from "@flight/experience";
-import { situationFingerprint } from "@flight/experience";
+import { situationFingerprint } from "@flight/experience/fingerprint";
 import type { WorldModel } from "@flight/world-model";
 
 const CANDIDATES=["HOLD","TURN_LEFT","TURN_RIGHT","CLIMB","DESCEND","SLOW","REROUTE","ABORT"] as const;
@@ -24,7 +24,20 @@ export interface BestPracticeAdvisor{readonly source:string;predict(features:rea
 export type Arbitration=NonNullable<DecisionEvidence["arbitration"]>;
 /** Chooses the final intent from the provider distribution and (optionally) the advisor's P(success) per action. */
 export type Arbiter=(provider:readonly {intent:PilotIntent;probability:number}[],advisor:readonly {action:PilotIntent;probability:number}[]|undefined)=>Arbitration;
-export interface PilotAdvisors{bestPractice?:BestPracticeAdvisor;worldModel?:WorldModel;timeoutMs?:number;horizonsSeconds?:readonly number[];arbiter?:Arbiter;features?:(o:Observation)=>number[]}
+/** Below this top-candidate probability the primary provider is not confident enough to decide alone. */
+export const DEFAULT_MIN_PROVIDER_CONFIDENCE=.5;
+export interface PilotAdvisors{bestPractice?:BestPracticeAdvisor;worldModel?:WorldModel;timeoutMs?:number;horizonsSeconds?:readonly number[];
+ /** Time budget for the decision engines (default 250 ms; a remote Jev needs more). */
+ decisionTimeoutMs?:number;
+ /** When the primary provider's top candidate is below this, the best-practice model's top intent decides (if it answered). Ignored when an `arbiter` is set. */
+ minProviderConfidence?:number;
+ /** Explicit blend of provider and advisor; when set it chooses the intent instead of the confidence threshold. */
+ arbiter?:Arbiter;
+ /** Feature encoding for the advisors (default `observationFeatures`). */
+ features?:(o:Observation)=>number[]}
+/** `provider` is who decided: the primary engine's provider, or the best-practice source when it took over. */
+export interface PilotDecision{intent:PilotIntent;probability:number;decisionId:string;disagreement:number;evidence:DecisionEvidence;provider:string}
+const pct=(x:number)=>`${Math.round(x*1000)/10}%`;
 /**
  * Blend provider and advisor: score = (1-w)·P_provider + w·P_advisor(success). `sample` draws from the blended scores
  * sharpened by `temperature` using the supplied deterministic random source; `argmax` takes the best.
@@ -40,7 +53,6 @@ export function blendArbiter(weight:number,selection:"argmax"|"sample"="argmax",
   return {advisorWeight:useAdv?w:0,selection,scores,providerTop,chosen,changedByAdvisor:useAdv&&w>0&&blendedTop!==providerTop,explored:chosen!==blendedTop};
  };
 }
-export interface PilotDecision{intent:PilotIntent;probability:number;decisionId:string;disagreement:number;evidence:DecisionEvidence}
 
 async function advise<T>(source:string,timeoutMs:number,run:()=>Promise<T>):Promise<AdvisorEvidence<T>>{
  const t0=performance.now();let timer:ReturnType<typeof setTimeout>|undefined;
@@ -75,7 +87,7 @@ export class CognitivePilot {
     id:decisionId,
     context:{schemaVersion:1,observation,temporal:{recentActions:temporal.recentActions}},
     question:`Choose the safest useful maneuver. Similar experience: ${JSON.stringify(experiences)}`,
-    candidates:CANDIDATES,timeoutMs:250
+    candidates:CANDIDATES,timeoutMs:this.advisors.decisionTimeoutMs??250
    }),
    bestPractice?advise(bestPractice.source,timeoutMs,async()=>[...await bestPractice.predict(features)]):undefined,
    worldModel?advise(worldModel.id,timeoutMs,async()=>(await worldModel.imagine({values:features},CANDIDATES,this.advisors.horizonsSeconds??[1,3])).map(p=>({action:p.action,horizonSeconds:p.horizonSeconds,predictedRisk:p.predictedRisk,uncertainty:p.uncertainty,predictedReward:p.predictedReward.survival+p.predictedReward.separation+p.predictedReward.objective+p.predictedReward.stability+p.predictedReward.efficiency}))):undefined
@@ -99,7 +111,22 @@ export class CognitivePilot {
    shadows:result.shadows.map((s,i)=>{const id=this.engines.shadows[i]!.identity;if(s.status==="rejected")return {provider:id.provider,model:id.model,error:s.reason instanceof Error?s.reason.message:String(s.reason)};const t=topCandidate(s.value);return {provider:id.provider,model:id.model,top:t?.value,probability:t?.probability}}),
    ...(bp?{bestPractice:bp}:{}),...(wm?{worldModel:wm}:{}),...(arbitration?{arbitration}:{})
   };
-  return {intent:(top?.value??"HOLD"),probability:top?.probability??0,decisionId,disagreement,evidence};
+  const provider=this.engines.primary.identity.provider;
+  if(arbitration){
+   const byAdvisor=arbitration.chosen!==arbitration.providerTop&&arbitration.changedByAdvisor,src=byAdvisor&&bp?bp.source:provider;
+   const reason=arbitration.advisorWeight>0?`Blended ${provider} with ${bp?.source??"the advisor"} at weight ${arbitration.advisorWeight.toFixed(2)} (${arbitration.selection}): ${arbitration.chosen}${arbitration.explored?" (exploration pick)":""}.`:`${provider}'s distribution decided (${arbitration.selection}): ${arbitration.chosen}${arbitration.explored?" (exploration pick)":""}.`;
+   return {intent:arbitration.chosen,probability:top?.probability??0,decisionId,disagreement,provider:src,evidence:{...evidence,selection:{source:byAdvisor?"BEST_PRACTICE":"PROVIDER",providerConfidence:providerDist[0]?.probability??0,threshold:0,reason}}};
+  }
+  // Low provider confidence: act on what the best-practice model learned instead, when it has an answer.
+  const threshold=this.advisors.minProviderConfidence??DEFAULT_MIN_PROVIDER_CONFIDENCE,confidence=top?.probability??0,learned=bp?.status==="OK"?bp.result[0]:undefined;
+  if(confidence>=threshold)
+   return {intent:top?.value??"HOLD",probability:confidence,decisionId,disagreement,provider,evidence:{...evidence,selection:{source:"PROVIDER",providerConfidence:confidence,threshold,reason:`${provider} was confident enough (${pct(confidence)} ≥ ${pct(threshold)}).`}}};
+  if(learned&&bp)
+   return {intent:learned.action,probability:learned.probability,decisionId,disagreement,provider:bp.source,evidence:{...evidence,selection:{source:"BEST_PRACTICE",providerConfidence:confidence,threshold,
+    reason:`${provider} confidence ${pct(confidence)} was below ${pct(threshold)}, so the best-practice model (${bp.source}) decided: ${learned.action} at ${pct(learned.probability)} estimated success.`}}};
+  const why=!bp?"no best-practice model is configured":bp.status==="OK"?"the best-practice model returned no ranking":`the best-practice model is unavailable (${bp.detail})`;
+  return {intent:top?.value??"HOLD",probability:confidence,decisionId,disagreement,provider,evidence:{...evidence,selection:{source:"PROVIDER",providerConfidence:confidence,threshold,
+   reason:`${provider} confidence ${pct(confidence)} was below ${pct(threshold)}, but ${why}, so ${provider}'s choice was kept.`}}};
  }
  remember(frame:DecisionFrame){this.memory.push(frame);}
  /**
