@@ -34,7 +34,8 @@ test("learning records a finished autopilot flight without changing the flight i
  // Autopilot flying is learned as pilot intents, credited to the autopilot.
  expect(Object.keys(learned[0].book.entries).every((k:string)=>/\|(HOLD|CLIMB|DESCEND|TURN_LEFT|TURN_RIGHT|SLOW)$/.test(k))).toBe(true);
  expect(learned[0].book).toMatchObject({autopilot:{flights:1,landings:1},manual:{flights:0}});
- const traces=inbox.filter(x=>x.type==="TRACE");expect(traces).toHaveLength(1);expect(traces[0].trace).toMatchObject({outcome:"LANDED",pilots:["AUTOPILOT"]});
+ // TRACE follows the final WORLD once the worker has awaited the checksum, so wait for it rather than racing it.
+ await next("TRACE"); const traces=inbox.filter(x=>x.type==="TRACE");expect(traces).toHaveLength(1);expect(traces[0].trace).toMatchObject({outcome:"LANDED",pilots:["AUTOPILOT"]});
  const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);const ref=await direct(defaultScenario(1n));
  expect(chk.checksum).toBe(ref.chk);expect(inbox.filter(x=>x.type==="LEARNING")).toHaveLength(1);
  // The next flight starts from what was learned: the worker reports the best action for the runway situation.
