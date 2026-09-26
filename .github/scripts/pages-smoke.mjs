@@ -21,6 +21,11 @@ try{
  check("Parked on the runway with the clock stopped",w.tick===0&&await p.getByTestId("start-panel").isVisible());
  check("Manual pilot and key box offered without a key",w.pilot==="MANUAL"&&await p.getByTestId("jev-input").isVisible());
  await shot(p,"01-first-visit");
+ // 1b. The Learning Lab button opens the Control Room's Learning Lab in a new tab; the flight tab stays put.
+ const [lab]=await Promise.all([ctx.waitForEvent("page"),p.getByTestId("open-lab").click()]);lab.on("pageerror",e=>errors.push(`uncaught: ${e.message}`));
+ await lab.getByRole("tab",{name:"Learning Lab",selected:true}).waitFor({timeout:60000}).catch(()=>{});
+ check("Learning Lab button opens the Learning Lab in a new tab",lab.url()===`${SITE}control-room/#lab`&&await lab.getByRole("button",{name:"▶ Run lab"}).isVisible()&&!p.isClosed(),lab.url());
+ await lab.screenshot({path:`${OUT}/01b-learning-lab.png`});await lab.close();
  // 2. Save a Jev key.
  await p.getByTestId("jev-input").fill(KEY);await p.getByTestId("jev-save").click();
  check("Jev key saved and masked",(await text(p,"[data-testid=jev-saved]")).includes(`••••${KEY.slice(-4)}`));

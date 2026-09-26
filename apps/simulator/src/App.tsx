@@ -7,7 +7,7 @@ import {Aircraft,CameraController,Entities,QualityGovernor,Scenery,SimulationDri
 import {createAircraft} from "./aircraft-model.ts";
 import {CAMERA_MODES,type CameraMode} from "./cameras.ts";
 import type {Scenery as SceneryHandle} from "./scenery.ts";
-import {AiPanel,Banner,ErrorBox,Help,Instruments,MovingMap,Readout,StartPanel,TopBar,TouchPad,useHud} from "./hud.tsx";
+import {AiPanel,Banner,ErrorBox,Help,Instruments,MovingMap,Readout,StartPanel,TopBar,TouchPad,useHud,LEARNING_LAB_URL} from "./hud.tsx";
 // URL options (also used by automated QA): ?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0
 export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean}
 export function parseOptions(search:string):AppOptions{
@@ -43,7 +43,7 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
    switch(e.code){case "KeyA":store.setPilot(store.pilot==="AUTOPILOT"?"MANUAL":"AUTOPILOT",true);break;case "KeyC":nextCamera();break;
     case "Digit1":case "Digit2":case "Digit3":case "Digit4":setCamera(CAMERA_MODES[Number(e.code.slice(-1))-1]!);break;
     case "KeyP":case "Space":e.preventDefault();store.togglePause();break;case "KeyR":store.restart();break;case "KeyN":store.restart(true);break;
-    case "KeyI":setPanel(v=>!v);break;case "KeyH":setHelp(v=>!v);break;case "Escape":setHelp(false);break;
+    case "KeyI":setPanel(v=>!v);break;case "KeyH":setHelp(v=>!v);break;case "KeyL":window.open(LEARNING_LAB_URL,"_blank","noopener");break;case "Escape":setHelp(false);break;
     case "Equal":case "NumpadAdd":store.changeRate(1);break;case "Minus":case "NumpadSubtract":store.changeRate(-1);break}};
   const up=(e:KeyboardEvent)=>{const i=KEYMAP[e.code];if(!i)return;const k=held.indexOf(i);if(k>=0)held.splice(k,1);sync()};
   const blur=()=>{held.length=0;sync()};

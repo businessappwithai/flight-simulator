@@ -17,7 +17,7 @@ bun run audit                         # no Math.random in deterministic packages
 bun run audit:deps                    # presentation/core dependency boundary (see Architecture)
 python3 scripts/static-check.py       # static import/API audit
 bun run verify:all                    # everything CI-equivalent in one go
-bun run simulator                     # 3D simulator, http://localhost:3200 (apps/simulator/serve.ts --port N)
+bun run simulator                     # 3D simulator, http://localhost:3200 (+ Control Room at /control-room/, as on Pages)
 bun run simulator:build               # static build → dist/simulator (page + sim.worker.js)
 bun run control-room                  # decision replay dashboard, http://localhost:3100
 bun run benchmark                     # reference autopilot over seed-varied scenarios

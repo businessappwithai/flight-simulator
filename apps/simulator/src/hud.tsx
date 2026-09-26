@@ -47,6 +47,8 @@ export function TopBar({hud,camera,panel,ai,onCamera,onPanel,onAi,onHelp,store}:
    <button onClick={()=>store.restart()} title="R">Restart</button>
    <button onClick={()=>store.restart(true)} title="N">New scenario</button>
    <button aria-pressed={panel} onClick={onPanel} title="I">Instruments</button>
+   {/* The Control Room is published next to the simulator (Pages and `bun run simulator`); a new tab keeps this flight running. */}
+   <a className="btn lab" href={LEARNING_LAB_URL} target="_blank" rel="noopener" title="L — opens in a new tab" data-testid="open-lab">Learning Lab</a>
    <button onClick={onHelp} title="H" aria-label="Help">?</button>
   </nav>
  </header>;
@@ -118,13 +120,15 @@ export function AiPanel({hud,store,onClose}:{hud:HudState;store:SimStore;onClose
 }
 export function Banner({hud}:{hud:HudState}){if(!hud.banner)return null;return <div className="banner panel" role="status"><div>{hud.banner.title}</div>{hud.banner.detail&&<small>{hud.banner.detail}</small>}</div>}
 export function ErrorBox({hud}:{hud:HudState}){if(!hud.error)return null;return <div className="error panel" role="alert">{hud.error}</div>}
+/** Relative to the simulator page: the Control Room is served at ./control-room/ and the Learning Lab is its #lab view. */
+export const LEARNING_LAB_URL="control-room/#lab";
 export function Help({onClose}:{onClose:()=>void}){
  return <div className="help" onClick={e=>{if(e.target===e.currentTarget)onClose()}}><div className="panel" role="dialog" aria-label="Controls">
   <b>Controls</b>
   <p>Each flight starts parked on runway 18: press <b>Start</b> or any flight control to begin.</p>
   <p><kbd>A</kbd> autopilot on/off — the autopilot takes off, flies through the gate and lands. It needs a Jev key (open <b>Jev &amp; learning</b>), which also turns on learning: every finished flight is remembered in this browser.</p>
   <p>Manual (any flight input disengages the autopilot): <kbd>W</kbd>/<kbd>↑</kbd> climb · <kbd>S</kbd>/<kbd>↓</kbd> descend · <kbd>←</kbd>/<kbd>Q</kbd> left · <kbd>→</kbd>/<kbd>E</kbd> right · <kbd>Shift</kbd> slow · <kbd>X</kbd> abort. On touch screens use the on-screen pad.</p>
-  <p><kbd>C</kbd> cycle camera · <kbd>1</kbd>–<kbd>4</kbd> chase / cockpit / orbit (drag) / tower · <kbd>P</kbd> or <kbd>Space</kbd> pause · <kbd>+</kbd>/<kbd>-</kbd> time rate · <kbd>R</kbd> restart · <kbd>N</kbd> new scenario · <kbd>I</kbd> instruments · <kbd>H</kbd> help</p>
+  <p><kbd>C</kbd> cycle camera · <kbd>1</kbd>–<kbd>4</kbd> chase / cockpit / orbit (drag) / tower · <kbd>P</kbd> or <kbd>Space</kbd> pause · <kbd>+</kbd>/<kbd>-</kbd> time rate · <kbd>R</kbd> restart · <kbd>N</kbd> new scenario · <kbd>I</kbd> instruments · <kbd>L</kbd> Learning Lab (new tab) · <kbd>H</kbd> help</p>
   <p className="k">Fly through the orange gate, then land back on runway 18. The balloon is the moving obstacle.</p>
   <button onClick={onClose}>Close</button>
  </div></div>;

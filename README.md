@@ -24,7 +24,7 @@ Run:
 bun install
 bun test
 bun run benchmark          # reference autopilot over 100 seed-varied scenarios
-bun run simulator          # 3D simulator at http://localhost:3200 (bun apps/simulator/serve.ts)
+bun run simulator          # 3D simulator at http://localhost:3200, Control Room at /control-room/ (bun apps/simulator/serve.ts)
 bun run simulator:build    # static build in dist/simulator (host anywhere; worker ships as sim.worker.js)
 bun run research           # R-series research CLI
 ```
@@ -45,7 +45,9 @@ Laid out for iPad and larger (portrait and landscape) with an on-screen yoke on 
 Control Room (React): `bun run control-room` → http://localhost:3100 — replay recorded JSONL telemetry, step or
 play it, and inspect each decision in the "Why?" card.
 
-Learning Lab: http://localhost:3100/#lab (the "Learning Lab" tab). Configure the XGBoost outcome model (tree depth,
+Learning Lab: the **Learning Lab** button in the simulator toolbar (or <kbd>L</kbd>) opens it in a new tab
+(`control-room/#lab` next to the simulator, e.g. http://localhost:3200/control-room/#lab; standalone Control Room:
+http://localhost:3100/#lab). Configure the XGBoost outcome model (tree depth,
 trees, eta, min child weight, subsampling, λ), how much it steers the decision provider (weight, ramp, sampling vs
 best-only), the flights and the label horizon, then run generations of fly → judge → retrain in a Web Worker
 (`packages/lab`). Learning curves compare runs (gate rate, balloon collisions, good decisions, holdout AUC/log-loss,

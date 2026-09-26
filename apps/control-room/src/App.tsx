@@ -77,12 +77,14 @@ function WhyPanel({v,panelRef}:{v:DashboardView;panelRef:React.RefObject<HTMLEle
 type View="replay"|"lab";
 const viewFromHash=():View=>location.hash==="#lab"?"lab":"replay";
 /** Two views: "Replay & Why" (recorded telemetry) and the Learning Lab (fly, learn, trace). #lab deep-links the lab. */
+// Published next to the simulator (Pages, `bun run simulator`) the Control Room lives at …/control-room/; standalone it is at /.
+const nextToSimulator=/\/control-room\/?$/.test(location.pathname);
 export function App({store,lab}:{store:DashboardStore;lab:LabStore}){
  const [view,setView]=useState<View>(viewFromHash);
  useEffect(()=>{const on=()=>setView(viewFromHash());window.addEventListener("hashchange",on);return()=>window.removeEventListener("hashchange",on)},[]);
  const go=(v:View)=>{history.replaceState(null,"",v==="lab"?"#lab":location.pathname+location.search);setView(v)};
  return <>
-  <nav className="views" aria-label="Control Room views"><strong>Flight World Control Room</strong>
+  <nav className="views" aria-label="Control Room views">{nextToSimulator&&<a className="back" href="../" data-testid="back-to-simulator">← Simulator</a>}<strong>Flight World Control Room</strong>
    <div className="seg" role="tablist">{([["replay","Replay & Why"],["lab","Learning Lab"]] as const).map(([k,t])=><button key={k} role="tab" aria-selected={view===k} className={view===k?"on":""} onClick={()=>go(k)}>{t}</button>)}</div></nav>
   {view==="lab"?<LabView store={lab}/>:<ReplayView store={store}/>}
  </>;
