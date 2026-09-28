@@ -21,6 +21,7 @@ bun run simulator                     # 3D simulator, http://localhost:3200 (+ C
 bun run simulator:build               # static build → dist/simulator (page + sim.worker.js)
 bun run control-room                  # decision replay dashboard, http://localhost:3100
 bun run benchmark                     # reference autopilot over seed-varied scenarios
+bun run geo:flight VOMM VIDP [--live]  # fly a great-circle route through the geospatial streamer (--live: real DEM tiles)
 ```
 
 CI (`.github/workflows/ci.yml`) runs `bun install`, `typecheck`, `bun test`, `audit`, `audit:deps`.
@@ -50,6 +51,10 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   `apps/control-room` may import only `@flight/protocol`. Only `*.worker.ts` files may use the core packages.
   So new simulator behaviour that needs core logic goes in a package, runs in `apps/simulator/src/sim.worker.ts`,
   and reaches the page as a `SimCommand`/`SimEvent` added to `packages/protocol/src/worker.ts`.
+- **Planet-scale geography (`packages/geospatial`).** Authoritative positions are WGS84 doubles; the renderer gets
+  coordinates relative to a `FloatingOrigin` that re-centres every 5 km. `WorldStreamer` (async, timing-dependent)
+  feeds rendering only. Physics, sensors and the AI read the deterministic `SimulationWorld` (fixed z12 tiles,
+  decimetre elevations, obstacle boxes, runways) whose manifest of tile hashes is recorded for replay.
 - `@flight/experience`'s index re-exports the Bun SQLite store, which cannot load in a browser worker; import
   browser-safe pieces through subpath exports (e.g. `@flight/experience/fingerprint`).
 

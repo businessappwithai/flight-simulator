@@ -54,3 +54,36 @@ world model; the only contract a UI sees is `@flight/protocol` (`WorldSnapshot`,
 
 Networking, when added, is a purpose-built transport for the same protocol messages. Scene-graph/VR
 frameworks (A-Frame, Networked A-Frame, "Matrix-world" style engines) are deliberately not part of the core.
+
+## Planet-scale world (`packages/geospatial`)
+
+Flight World can place a flight anywhere on Earth without loading the planet:
+
+```
+Mapzen Terrarium DEM · Overture/OSM (PMTiles) · OurAirports
+        │ TileSource.load(tile, AbortSignal)
+        ▼
+WorldStreamer ── planTiles(position, velocity, route, AGL) ── LOD rings + prediction (30/60/120 s ahead)
+        │   priority: current 100 · +30 s 90 · +60 s 70 · +120 s 65 · destination 60 · route 50 · in range 40 · behind 5
+        ▼
+LRU byte cache (wanted tiles refreshed low→high priority, so tiles behind and unwanted tiles are evicted first)
+        │
+        ├─▶ rendering (worker → page as meshes in the FloatingOrigin frame; never authoritative)
+        └─▶ extractSimulationTile ─▶ SimulationWorld (z12, decimetre grid, obstacle boxes, runways)
+                                          │ manifest = sorted tile keys + SHA-256, recorded with the flight
+                                          ▼
+                                   geoSituation → physics, sensors, safety, Jev / XGBoost / Dreamer
+```
+
+Invariants:
+
+- **Two worlds.** The streamer is asynchronous and only feeds rendering. Deterministic consumers read
+  `SimulationWorld`, whose queries depend only on which tiles it holds (never load order), and return `null` where
+  data is missing instead of guessing. A replay rebuilds the world from the recorded manifest (`missingFrom`).
+- **Floating origin.** Authoritative positions are WGS84 doubles. Three.js only sees `FloatingOrigin.toLocal`
+  (x east, y up, z −north), re-centred every 5 km, so float32 vertices stay centimetre-precise anywhere on Earth.
+- **LOD follows the flight, not the camera.** Ring detail drops with height above ground (no buildings above
+  1,500 m AGL, no roads above 3,000 m) and ring radii stretch with ground speed; a turn sharper than 15° aborts
+  in-flight loads that are now behind.
+- **Attribution travels with the data** (`DATA_SOURCES`, `attributionFor`): Mapzen's composite DEM sources, ODbL for
+  Overture buildings and OSM, public-domain OurAirports.

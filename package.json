@@ -10,6 +10,7 @@
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
     "benchmark": "bun apps/benchmark/src/main.ts",
+    "geo:flight": "bun scripts/geo-flight.ts",
     "research": "bun apps/research/src/main.ts",
     "simulator": "bun apps/simulator/serve.ts",
     "simulator:build": "bun apps/simulator/build.ts",

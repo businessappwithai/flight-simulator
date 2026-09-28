@@ -89,6 +89,9 @@
     "packages/failure-analysis": {
       "name": "@flight/failure-analysis",
     },
+    "packages/geospatial": {
+      "name": "@flight/geospatial",
+    },
     "packages/lab": {
       "name": "@flight/lab",
     },
@@ -178,6 +181,8 @@
     "@flight/experiments": ["@flight/experiments@workspace:packages/experiments"],
 
     "@flight/failure-analysis": ["@flight/failure-analysis@workspace:packages/failure-analysis"],
+
+    "@flight/geospatial": ["@flight/geospatial@workspace:packages/geospatial"],
 
     "@flight/lab": ["@flight/lab@workspace:packages/lab"],
 

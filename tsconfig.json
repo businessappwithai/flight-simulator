@@ -118,6 +118,9 @@
       ],
       "@flight/lab": [
         "./packages/lab/src/index.ts"
+      ],
+      "@flight/geospatial": [
+        "./packages/geospatial/src/index.ts"
       ]
     },
     "jsx": "react-jsx"
