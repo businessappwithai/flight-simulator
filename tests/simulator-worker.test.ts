@@ -116,7 +116,7 @@ function terrainServer(delayMs:()=>number){
 async function geoFlight(delay:()=>number){
  const srv=terrainServer(delay),{w,inbox,next}=worker();try{
   const catalog=await next("GEO_CATALOG");expect(catalog.airports.map((a:any)=>a.ident)).toContain("VOMM");
-  w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",terrainUrl:srv.url});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
+  w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",terrainUrl:srv.url,featuresUrl:null});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
   const first=await next("WORLD");expect(first.geo).toMatchObject({airport:"VOMM",runway:"07",headingDeg:72});
   let seq=0,last:any,holds=0;
   for(let i=0;i<400;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);
@@ -146,3 +146,33 @@ test("SET_WORLD validates its input, and null returns to the procedural airfield
  await Bun.sleep(100);expect(inbox.filter(x=>x.type==="ERROR")).toHaveLength(4);
  const from=inbox.length;w.postMessage({type:"SET_WORLD",airport:null});const clear=await next("TERRAIN",from);expect(clear.clear).toBe(true);const wd=await next("WORLD",from);expect(wd.geo).toBeUndefined();
 }finally{w.terminate()}});
+
+// ---- Buildings and airport surfaces from a PMTiles archive served with HTTP Range (OpenMapTiles schema).
+import {gzipSync} from "node:zlib";
+import {Compression,encodeMvt,lonLatToTile,lonLatToTilePoint,ringArea,writePMTiles} from "@flight/geospatial";
+function featureServer(){
+ const rwy:[number,number][]=[[80.1529491,12.9841489],[80.1686992,12.9900653],[80.1844492,12.9959816]]; // VOMM 07/25 (OSM)
+ const tiles=new Map<string,{t:{z:number;x:number;y:number};b:any[];a:any[]}>(),at=(lon:number,lat:number)=>{const t=lonLatToTile(lon,lat,14),k=`${t.x}/${t.y}`;return tiles.get(k)??tiles.set(k,{t,b:[],a:[]}).get(k)!};
+ for(const p of rwy){const e=at(p[0],p[1]);if(!e.a.length)e.a.push({id:1,type:2,properties:{class:"runway",ref:"07/25"},geometry:[rwy.map(q=>lonLatToTilePoint(e.t,4096,q[0],q[1]))]})}
+ // A block of 20 m buildings 7 km east-north-east, well off the airfield.
+ for(let i=0;i<5;i++){const lon=80.225+i*.0008,lat=13.005,e=at(lon,lat),d=.0003,ring=[[lon-d,lat-d],[lon+d,lat-d],[lon+d,lat+d],[lon-d,lat+d],[lon-d,lat-d]].map(q=>lonLatToTilePoint(e.t,4096,q[0]!,q[1]!));
+  e.b.push({id:10+i,type:3,properties:{render_height:20},geometry:[ringArea(ring)<0?ring.reverse():ring]})}
+ const bytes=writePMTiles([...tiles.values()].map(v=>({tile:v.t,data:gzipSync(encodeMvt([{name:"building",extent:4096,features:v.b},{name:"aeroway",extent:4096,features:v.a}]))})),{compress:b=>gzipSync(b),tileCompression:Compression.Gzip});
+ const server=Bun.serve({port:0,fetch(req){const m=/bytes=(\d+)-(\d+)/.exec(req.headers.get("range")??"");if(!m)return new Response(bytes as Uint8Array<ArrayBuffer>);return new Response(bytes.slice(+m[1]!,+m[2]!+1) as Uint8Array<ArrayBuffer>,{status:206})}});
+ return {url:`http://localhost:${server.port}/features.pmtiles`,stop:()=>server.stop(true)};
+}
+test("with buildings and a surveyed runway from PMTiles, the anchored mission still lands and features stream",async()=>{
+ const terrain=terrainServer(()=>0),features=featureServer(),{w,inbox,next}=worker();try{
+  w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",terrainUrl:terrain.url,featuresUrl:features.url});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
+  let seq=0,last:any;
+  for(let i=0;i<400;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);
+   if(last.geo.holding||last.geo.state==="LOADING"){await Bun.sleep(5);continue}
+   if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
+  expect(last.world.objective.phase).toBe("COMPLETE");
+  expect(last.geo).toMatchObject({surveyed:true,features:{state:"READY"}});expect(last.geo.headingDeg).toBeCloseTo(68.9,1);
+  for(let i=0;i<200&&!inbox.some(x=>x.type==="FEATURES"&&x.add.some((p:any)=>p.layer==="airports"));i++)await Bun.sleep(10);
+  const patches=inbox.filter(x=>x.type==="FEATURES").flatMap(x=>x.add);expect(patches.some((p:any)=>p.layer==="airports"&&p.lights?.length)).toBe(true);
+  // The flat airfield means the mission is bit-for-bit the procedural one.
+  const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);expect(chk.checksum).toBe((await direct(defaultScenario(1n))).chk);
+ }finally{w.terminate();terrain.stop();features.stop()}
+},60_000);

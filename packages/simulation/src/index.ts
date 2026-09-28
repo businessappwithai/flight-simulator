@@ -76,8 +76,13 @@ export type GroundHeight = (x: number, z: number) => number;
 export class DeterministicSimulation {
   readonly clock = new SimulationClock();
   #ground: GroundHeight | undefined;
-  /** Sets (or clears) the terrain under the aircraft; the flat default keeps every existing checksum unchanged. */
-  setGround(ground: GroundHeight | undefined): void { this.#ground = ground; }
+  #landable: ((x: number, z: number) => boolean) | undefined;
+  /**
+   * Sets (or clears) the terrain under the aircraft; the flat default keeps every existing checksum unchanged.
+   * `landable` marks surfaces off the home airfield (real runways) where a gentle touchdown is a landing, not a
+   * crash. Both must be pure functions of their inputs.
+   */
+  setGround(ground: GroundHeight | undefined, landable?: (x: number, z: number) => boolean): void { this.#ground = ground; this.#landable = ground ? landable : undefined; }
   #rng = new SplitMix64(1n);
   #aircraft!: AircraftState;
   #entities: EntityState[] = [];
@@ -141,7 +146,7 @@ export class DeterministicSimulation {
     const ground = this.#ground ? this.#ground(position.x, position.z) : 0;
     if (position.y <= ground) {
       // Off the (flat) airfield, touching real terrain is controlled flight into terrain, not a landing.
-      if (Math.abs(velocity.y) > 8 || Math.abs(roll) > 0.35 || (this.#ground && ground !== 0)) crashed = true;
+      if (Math.abs(velocity.y) > 8 || Math.abs(roll) > 0.35 || (this.#ground && ground !== 0 && !this.#landable?.(position.x, position.z))) crashed = true;
       position = { ...position, y: ground };
       grounded = true;
     }

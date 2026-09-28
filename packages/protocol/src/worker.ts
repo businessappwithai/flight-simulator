@@ -53,7 +53,17 @@ export interface GeoStatus{airport:string;name:string;runway:string;headingDeg:n
  /** Deterministic terrain the physics used: tile count and SHA-256 over the tile manifest. */
  simTiles:number;manifest?:string;
  streaming:{wanted:number;loaded:number;inFlight:number;cacheMB:number};
- airports:GeoAirportMarker[];attribution:string[]}
+ airports:GeoAirportMarker[];attribution:string[];
+ /** Buildings and airport surfaces (vector tiles): OFF without a source, UNAVAILABLE when it cannot be reached. */
+ features:{state:"OFF"|"LOADING"|"READY"|"UNAVAILABLE";tiles:number;buildings:number;detail?:string};
+ /** True when the runway was placed from surveyed data (OSM/Overture), false when synthesized from OurAirports. */
+ surveyed:boolean;
+ /** Ref of the real runway under the aircraft (e.g. "09L/27R"), or null. */
+ runwayBelow:string|null}
+/** Buildings or airport surfaces for one vector tile: flat-shaded triangles, float32 relative to `center`. */
+export interface FeaturePatch{key:string;layer:"buildings"|"airports";center:Vec3Tuple;positions:Float32Array;colors:Uint8Array;
+ /** Runway edge lights (points, relative to `center`). */
+ lights?:Float32Array}
 /** One terrain tile mesh. Positions are float32 relative to `center` (three.js coordinates, kept in double precision). */
 export interface TerrainPatch{key:string;z:number;center:Vec3Tuple;positions:Float32Array;colors:Uint8Array;indices:Uint16Array}
 export interface GeoCatalogAirport{ident:string;name:string;municipality:string;country:string;runways:string[]}
@@ -70,7 +80,9 @@ export type SimCommand=
  | {type:"SET_JEV";apiKey:string|null}
  | {type:"RESTORE";snapshot:unknown}
  /** Anchor the flight to a real airport and runway (null: the procedural airfield). `terrainUrl` overrides the Terrarium tile URL template. */
- | {type:"SET_WORLD";airport:string|null;runway?:string;terrainUrl?:string};
+ | {type:"SET_WORLD";airport:string|null;runway?:string;terrainUrl?:string;
+  /** Buildings and airport surfaces: OpenMapTiles vector tiles ({z}/{x}/{y} template, TileJSON or .pmtiles URL); null turns them off. Default: OpenFreeMap. */
+  featuresUrl?:string|null};
 export type SimEvent=
  | {type:"READY"}
  | {type:"WORLD";world:WorldSnapshot;seq?:number;controls?:AircraftControls;pilot?:SimPilot;intent?:PilotIntent;autopilotMode?:string;scenarioId?:string;paused?:boolean;learning?:boolean;insight?:LearningInsight;copilot?:CopilotAdvice;copilotStatus?:CopilotStatus;geo?:GeoStatus}
@@ -79,6 +91,8 @@ export type SimEvent=
  | {type:"CHECKSUM";tick:string;checksum:string}
  /** Terrain meshes to add and keys to drop. `epoch` changes when the world is re-anchored; patches from older epochs are stale. */
  | {type:"TERRAIN";epoch:number;add:TerrainPatch[];remove:string[];clear?:boolean}
+ /** Building and airport-surface meshes to add and keys to drop (same epoch rules as TERRAIN). */
+ | {type:"FEATURES";epoch:number;add:FeaturePatch[];remove:string[];clear?:boolean}
  /** Airports the simulator can be anchored to (sent once at start-up). */
  | {type:"GEO_CATALOG";airports:GeoCatalogAirport[]}
  | {type:"ERROR";message:string};

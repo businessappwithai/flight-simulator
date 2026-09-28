@@ -75,6 +75,8 @@ export function planTiles(input: PlanInput): TileRequest[] {
     const distanceM = distanceToTile(p, tile);
     for (const layer of layers) {
       if (!allowed.has(layer)) continue;
+      const cap = policy.layerMaxDistanceM?.[layer];
+      if (cap !== undefined && priority < PRIORITY.CURRENT && distanceM > cap) continue;
       const key = `${layer}:${tileKey(tile)}`, old = wanted.get(key);
       if (!old || old.priority < priority) wanted.set(key, { key, layer, tile, level, priority, reason: reasonFor(priority), distanceM });
     }

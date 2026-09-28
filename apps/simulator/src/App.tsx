@@ -3,20 +3,20 @@ import {Canvas} from "@react-three/fiber";
 import * as THREE from "three";
 import type {EntityState,PilotIntent,SimPilot} from "@flight/protocol";
 import {RATES,type SimStore,type ScenarioKind} from "./sim-store.ts";
-import {Aircraft,CameraController,Entities,GeoAirports,GeoTerrain,QualityGovernor,Scenery,SimulationDriver,Trail,ViewDistance} from "./scene.tsx";
+import {Aircraft,CameraController,Entities,GeoAirports,GeoFeatures,GeoTerrain,QualityGovernor,Scenery,SimulationDriver,Trail,ViewDistance} from "./scene.tsx";
 import {createAircraft} from "./aircraft-model.ts";
 import {CAMERA_MODES,type CameraMode} from "./cameras.ts";
 import type {Scenery as SceneryHandle} from "./scenery.ts";
 import {AiPanel,Attribution,Banner,ErrorBox,GeoBadge,Help,Instruments,MovingMap,Readout,StartPanel,TopBar,TouchPad,useHud,LEARNING_LAB_URL} from "./hud.tsx";
 // URL options (also used by automated QA): ?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0
 // Real world: &airport=VOMM&runway=07 (and &terrain=<Terrarium URL template with {z}/{x}/{y}> to use another tile server).
-export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string}
+export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string;featuresUrl?:string}
 export function parseOptions(search:string):AppOptions{
  const p=new URLSearchParams(search),seed=p.get("seed"),cam=(p.get("camera")??"").toUpperCase() as CameraMode,rate=Number(p.get("rate"));
  return {seed:seed&&/^\d{1,19}$/.test(seed)?BigInt(seed):1n,scenario:p.get("scenario")==="seeded"?"seeded":"default",pilot:p.get("pilot")?.toUpperCase()==="MANUAL"?"MANUAL":"AUTOPILOT",
   rate:(RATES as readonly number[]).includes(rate)?rate:1,camera:CAMERA_MODES.includes(cam)?cam:"CHASE",quality:p.get("quality")==="low"?"low":"high",hud:p.get("hud")!=="0",
   ...(/^[A-Za-z0-9-]{2,8}$/.test(p.get("airport")??"")?{airport:p.get("airport")!.toUpperCase()}:{}),...(/^[0-9]{1,2}[LRCT]?$/i.test(p.get("runway")??"")?{runway:p.get("runway")!.toUpperCase()}:{}),
-  ...(p.get("terrain")?{terrainUrl:p.get("terrain")!}:{})};
+  ...(p.get("terrain")?{terrainUrl:p.get("terrain")!}:{}),...(p.get("features")?{featuresUrl:p.get("features")!}:{})};
 }
 const KEYMAP:Record<string,PilotIntent>={KeyW:"CLIMB",ArrowUp:"CLIMB",KeyS:"DESCEND",ArrowDown:"DESCEND",ArrowLeft:"TURN_LEFT",KeyQ:"TURN_LEFT",ArrowRight:"TURN_RIGHT",KeyE:"TURN_RIGHT",ShiftLeft:"SLOW",ShiftRight:"SLOW",KeyX:"ABORT"};
 class RenderBoundary extends Component<{children:ReactNode;onError:(m:string)=>void},{failed:boolean}>{
@@ -55,7 +55,7 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
   return()=>{window.removeEventListener("keydown",down);window.removeEventListener("keyup",up);window.removeEventListener("blur",blur)};
  },[store,nextCamera]);
  // Read-only hook for automated QA and debugging.
- useEffect(()=>{(globalThis as any).flightSim={get world(){return store.latest?.world},get pilot(){return store.pilot},get camera(){return cameraRef.current},get fps(){return store.fps},get paused(){return store.paused},get checksum(){return store.client.checksum},get geo(){return store.latest?.geo},get terrainTiles(){return store.terrain.size}}},[store]);
+ useEffect(()=>{(globalThis as any).flightSim={get world(){return store.latest?.world},get pilot(){return store.pilot},get camera(){return cameraRef.current},get fps(){return store.fps},get paused(){return store.paused},get checksum(){return store.client.checksum},get geo(){return store.latest?.geo},get terrainTiles(){return store.terrain.size},get featurePatches(){return store.features.size}}},[store]);
  const cameraRef=useRef(camera);cameraRef.current=camera;
  return <>
   <RenderBoundary onError={m=>store.showError(m,true)}>
@@ -68,6 +68,7 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
     <Scenery onReady={onScenery} geo={!!hud.airport}/>
     <ViewDistance geo={!!hud.airport}/>
     <GeoTerrain store={store}/>
+    <GeoFeatures store={store}/>
     {hud.geo&&<GeoAirports airports={hud.geo.airports} home={hud.geo.airport}/>}
     <Aircraft store={store} model={model}/>
     <Entities store={store} entities={entities}/>
