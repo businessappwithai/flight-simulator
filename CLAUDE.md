@@ -51,6 +51,11 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   `apps/control-room` may import only `@flight/protocol`. Only `*.worker.ts` files may use the core packages.
   So new simulator behaviour that needs core logic goes in a package, runs in `apps/simulator/src/sim.worker.ts`,
   and reaches the page as a `SimCommand`/`SimEvent` added to `packages/protocol/src/worker.ts`.
+- **Real-world flights (`SET_WORLD`).** The worker's `GeoWorld` anchors the flat local frame to a real runway.
+  Physics reads terrain through `DeterministicSimulation.setGround` (flat within 3.2 km of the runway), and the
+  worker holds the clock until every z12 terrain tile under the aircraft is loaded, so an anchored flight's checksum
+  does not depend on network timing. Terrain meshes reach the page as `TERRAIN` events (tile patches with a
+  double-precision centre). Browser QA: `.gstack/qa-reports/scripts/geo-qa.mjs` with `terrain-relay.ts`.
 - **Planet-scale geography (`packages/geospatial`).** Authoritative positions are WGS84 doubles; the renderer gets
   coordinates relative to a `FloatingOrigin` that re-centres every 5 km. `WorldStreamer` (async, timing-dependent)
   feeds rendering only. Physics, sensors and the AI read the deterministic `SimulationWorld` (fixed z12 tiles,
@@ -70,7 +75,8 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
 - The Jev key (`localStorage["flightWorld.jevKey"]`) gates the autopilot and learning; manual flight always works.
   Learning (`packages/learning`) is a JSON book of `situationFingerprint|action` → landings/crashes, persisted by
   the store in `localStorage["flightWorld.learning.v1"]` and validated with `parseBook` on load.
-- URL options (also used by QA): `?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0`.
+- URL options (also used by QA): `?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0`;
+  real world: `&airport=VNKT&runway=02` (`&terrain=<Terrarium URL template>` for another tile server).
   `globalThis.flightSim` exposes read-only `world`, `pilot`, `camera`, `fps`, `paused`, `checksum` for automation.
 
 ## Browser QA

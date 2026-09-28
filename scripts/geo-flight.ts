@@ -3,16 +3,15 @@
 //   bun scripts/geo-flight.ts VOMM VIDP            # synthetic tile source (offline, instant)
 //   bun scripts/geo-flight.ts VOMM VIDP --live     # real Mapzen Terrarium tiles from AWS Open Data
 //
-// Airports come from the bundled OurAirports-format sample unless GEO_AIRPORTS / GEO_RUNWAYS point at the full CSVs.
+// Airports come from the bundled OurAirports-format sample (sample-airports.ts) unless GEO_AIRPORTS / GEO_RUNWAYS point at the full CSVs.
 import {inflateSync} from "node:zlib";
 import {
- AirportIndex,FloatingOrigin,SIM_ZOOM,SimulationWorld,TerrainTile,WorldStreamer,attributionFor,decodePng,extractSimulationTile,geoSituation,
+ AirportIndex,FloatingOrigin,SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV,SIM_ZOOM,SimulationWorld,TerrainTile,WorldStreamer,attributionFor,decodePng,extractSimulationTile,geoSituation,
  initialBearing,lonLatToTile,parseOurAirports,planAirportRoute,terrariumSource,tileKey,type TileSource,
 } from "@flight/geospatial";
 
 const [fromCode="VOMM",toCode="VIDP"]=process.argv.slice(2).filter(a=>!a.startsWith("--")),live=process.argv.includes("--live");
-const dir="packages/geospatial/data/ourairports-sample";
-const index=new AirportIndex(parseOurAirports(await Bun.file(process.env.GEO_AIRPORTS??`${dir}/airports.csv`).text(),await Bun.file(process.env.GEO_RUNWAYS??`${dir}/runways.csv`).text()));
+const index=new AirportIndex(parseOurAirports(process.env.GEO_AIRPORTS?await Bun.file(process.env.GEO_AIRPORTS).text():SAMPLE_AIRPORTS_CSV,process.env.GEO_RUNWAYS?await Bun.file(process.env.GEO_RUNWAYS).text():SAMPLE_RUNWAYS_CSV));
 const from=index.require(fromCode),to=index.require(toCode),route=planAirportRoute(from,to);
 
 const decode=(png:Uint8Array)=>decodePng(png,d=>new Uint8Array(inflateSync(d)));

@@ -3,17 +3,20 @@ import {Canvas} from "@react-three/fiber";
 import * as THREE from "three";
 import type {EntityState,PilotIntent,SimPilot} from "@flight/protocol";
 import {RATES,type SimStore,type ScenarioKind} from "./sim-store.ts";
-import {Aircraft,CameraController,Entities,QualityGovernor,Scenery,SimulationDriver,Trail} from "./scene.tsx";
+import {Aircraft,CameraController,Entities,GeoAirports,GeoTerrain,QualityGovernor,Scenery,SimulationDriver,Trail,ViewDistance} from "./scene.tsx";
 import {createAircraft} from "./aircraft-model.ts";
 import {CAMERA_MODES,type CameraMode} from "./cameras.ts";
 import type {Scenery as SceneryHandle} from "./scenery.ts";
-import {AiPanel,Banner,ErrorBox,Help,Instruments,MovingMap,Readout,StartPanel,TopBar,TouchPad,useHud,LEARNING_LAB_URL} from "./hud.tsx";
+import {AiPanel,Attribution,Banner,ErrorBox,GeoBadge,Help,Instruments,MovingMap,Readout,StartPanel,TopBar,TouchPad,useHud,LEARNING_LAB_URL} from "./hud.tsx";
 // URL options (also used by automated QA): ?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0
-export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean}
+// Real world: &airport=VOMM&runway=07 (and &terrain=<Terrarium URL template with {z}/{x}/{y}> to use another tile server).
+export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string}
 export function parseOptions(search:string):AppOptions{
  const p=new URLSearchParams(search),seed=p.get("seed"),cam=(p.get("camera")??"").toUpperCase() as CameraMode,rate=Number(p.get("rate"));
  return {seed:seed&&/^\d{1,19}$/.test(seed)?BigInt(seed):1n,scenario:p.get("scenario")==="seeded"?"seeded":"default",pilot:p.get("pilot")?.toUpperCase()==="MANUAL"?"MANUAL":"AUTOPILOT",
-  rate:(RATES as readonly number[]).includes(rate)?rate:1,camera:CAMERA_MODES.includes(cam)?cam:"CHASE",quality:p.get("quality")==="low"?"low":"high",hud:p.get("hud")!=="0"};
+  rate:(RATES as readonly number[]).includes(rate)?rate:1,camera:CAMERA_MODES.includes(cam)?cam:"CHASE",quality:p.get("quality")==="low"?"low":"high",hud:p.get("hud")!=="0",
+  ...(/^[A-Za-z0-9-]{2,8}$/.test(p.get("airport")??"")?{airport:p.get("airport")!.toUpperCase()}:{}),...(/^[0-9]{1,2}[LRCT]?$/i.test(p.get("runway")??"")?{runway:p.get("runway")!.toUpperCase()}:{}),
+  ...(p.get("terrain")?{terrainUrl:p.get("terrain")!}:{})};
 }
 const KEYMAP:Record<string,PilotIntent>={KeyW:"CLIMB",ArrowUp:"CLIMB",KeyS:"DESCEND",ArrowDown:"DESCEND",ArrowLeft:"TURN_LEFT",KeyQ:"TURN_LEFT",ArrowRight:"TURN_RIGHT",KeyE:"TURN_RIGHT",ShiftLeft:"SLOW",ShiftRight:"SLOW",KeyX:"ABORT"};
 class RenderBoundary extends Component<{children:ReactNode;onError:(m:string)=>void},{failed:boolean}>{
@@ -33,7 +36,8 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
  const entityKey=hud.world?.entities.map(e=>`${e.id}:${e.kind}:${e.radius}`).join("|")??"";
  const entities=useMemo<readonly EntityState[]>(()=>hud.world?.entities??[],[entityKey]); // eslint-disable-line react-hooks/exhaustive-deps
  // Keep the URL shareable: it always reproduces the scenario on screen.
- useEffect(()=>{const u=new URL(location.href);u.searchParams.set("seed",String(store.seed));u.searchParams.set("scenario",store.scenario);history.replaceState(null,"",u)},[store,hud.scenarioId]);
+ useEffect(()=>{const u=new URL(location.href);u.searchParams.set("seed",String(store.seed));u.searchParams.set("scenario",store.scenario);
+  for(const [k,v] of [["airport",hud.airport],["runway",hud.runway]] as const)v?u.searchParams.set(k,v):u.searchParams.delete(k);history.replaceState(null,"",u)},[store,hud.scenarioId,hud.airport,hud.runway]);
  useEffect(()=>{
   const held:PilotIntent[]=[];const sync=()=>store.setIntent(held.at(-1)??"HOLD");
   // Typing in a field (the Jev key box) must not fly the aircraft or trigger shortcuts.
@@ -51,17 +55,20 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
   return()=>{window.removeEventListener("keydown",down);window.removeEventListener("keyup",up);window.removeEventListener("blur",blur)};
  },[store,nextCamera]);
  // Read-only hook for automated QA and debugging.
- useEffect(()=>{(globalThis as any).flightSim={get world(){return store.latest?.world},get pilot(){return store.pilot},get camera(){return cameraRef.current},get fps(){return store.fps},get paused(){return store.paused},get checksum(){return store.client.checksum}}},[store]);
+ useEffect(()=>{(globalThis as any).flightSim={get world(){return store.latest?.world},get pilot(){return store.pilot},get camera(){return cameraRef.current},get fps(){return store.fps},get paused(){return store.paused},get checksum(){return store.client.checksum},get geo(){return store.latest?.geo},get terrainTiles(){return store.terrain.size}}},[store]);
  const cameraRef=useRef(camera);cameraRef.current=camera;
  return <>
   <RenderBoundary onError={m=>store.showError(m,true)}>
    <Canvas className="view" shadows={options.quality==="high"} dpr={options.quality==="low"?1:[1,2]} camera={{fov:60,near:.3,far:60000}}
-    gl={{antialias:true,powerPreference:"high-performance"}} aria-label="3D flight view"
+    gl={{antialias:true,powerPreference:"high-performance",logarithmicDepthBuffer:true}} aria-label="3D flight view"
     fallback={<div className="fallback">WebGL is not available, so the 3D view cannot start. Use a current Safari, Chrome, Edge or Firefox with hardware acceleration.</div>}
     onCreated={({gl})=>{gl.toneMapping=THREE.ACESFilmicToneMapping;gl.toneMappingExposure=.62;gl.shadowMap.type=THREE.PCFSoftShadowMap;
      gl.domElement.addEventListener("webglcontextlost",e=>{e.preventDefault();store.showError("The graphics context was lost (GPU reset). Reload the page to continue.",true)})}}>
     <SimulationDriver store={store}/>
-    <Scenery onReady={onScenery}/>
+    <Scenery onReady={onScenery} geo={!!hud.airport}/>
+    <ViewDistance geo={!!hud.airport}/>
+    <GeoTerrain store={store}/>
+    {hud.geo&&<GeoAirports airports={hud.geo.airports} home={hud.geo.airport}/>}
     <Aircraft store={store} model={model}/>
     <Entities store={store} entities={entities}/>
     <Trail store={store} model={model}/>
@@ -73,6 +80,7 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
   {ai&&<AiPanel hud={hud} store={store} onClose={()=>setAi(false)}/>}
   <StartPanel hud={hud} store={store}/>
   <ErrorBox hud={hud}/><Banner hud={hud}/>
+  {hud.geo&&<GeoBadge geo={hud.geo}/>}{hud.geo&&<Attribution lines={hud.geo.attribution}/>}
   {/* Parked on the runway the Start card offers the same action, and on phones the yoke would cover it. */}
   {hud.started&&<TouchPad store={store}/>}
   {options.hud&&<footer className="dock"><Readout hud={hud}/>{panel&&<Instruments store={store}/>}<MovingMap store={store}/></footer>}

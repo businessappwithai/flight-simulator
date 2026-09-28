@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,useSyncExternalStore} from "react";
-import type {PilotIntent} from "@flight/protocol";
+import type {GeoStatus,PilotIntent} from "@flight/protocol";
 import {SixPack,MiniMap,flightData} from "./instruments.ts";
 import type {SimStore,HudState} from "./sim-store.ts";
 import type {CameraMode} from "./cameras.ts";
@@ -64,16 +64,44 @@ export function TouchPad({store}:{store:SimStore}){
 /** Shown while the aircraft is parked on the runway: nothing moves until the pilot starts. */
 export function StartPanel({hud,store}:{hud:HudState;store:SimStore}){
  if(hud.started||!hud.world)return null;
+ const geo=hud.geo,loading=geo?.state==="LOADING";
  return <div className="start panel" role="region" aria-label="Ready for departure" data-testid="start-panel">
-  <b>Ready on runway 18</b>
-  <p>Engine at idle, brakes set. Start to begin the take-off roll, or use any flight control.</p>
+  <b>{geo?`Ready on ${geo.airport} runway ${geo.runway}`:"Ready on runway 18"}</b>
+  {geo&&<p className="k">{geo.name}</p>}
+  <p>{loading?"Loading real terrain around the airport…":"Engine at idle, brakes set. Start to begin the take-off roll, or use any flight control."}</p>
+  <WorldPicker hud={hud} store={store}/>
   <div className="start-actions">
    <button className="primary" onClick={()=>{store.setPilot("MANUAL");store.start()}} data-testid="start-manual">Start (manual)</button>
    <button onClick={()=>store.setPilot("AUTOPILOT",true)} aria-disabled={!hud.jevKeyHint} className={hud.jevKeyHint?undefined:"locked"} data-testid="start-autopilot">Start on autopilot</button>
   </div>
   {!hud.jevKeyHint&&<p className="k">The autopilot needs a Jev key. Manual flying always works.</p>}
+  {geo?.state==="ERROR"&&<p className="k" role="status">{geo.detail}</p>}
  </div>;
 }
+/** Where to fly from: the procedural airfield, or a real airport and runway with real terrain around it. */
+function WorldPicker({hud,store}:{hud:HudState;store:SimStore}){
+ if(!hud.catalog.length)return null;
+ const airport=hud.catalog.find(a=>a.ident===hud.airport),runways=airport?.runways??[],runway=hud.geo?.runway??hud.runway??"";
+ return <div className="world-picker">
+  <label>From <select value={hud.airport??""} onChange={e=>store.setWorld(e.target.value||null)} data-testid="world-airport">
+   <option value="">Flight World airfield (procedural)</option>
+   {hud.catalog.map(a=><option key={a.ident} value={a.ident}>{a.ident} · {a.municipality||a.name}</option>)}
+  </select></label>
+  {airport&&<label>Runway <select value={runway} onChange={e=>store.setWorld(airport.ident,e.target.value)} data-testid="world-runway">
+   {runways.map(r=><option key={r} value={r}>{r}</option>)}
+  </select></label>}
+ </div>;
+}
+/** Where the aircraft is on Earth, the terrain under it, and what is streaming. */
+export function GeoBadge({geo}:{geo:GeoStatus}){
+ const p=geo.position,ll=(v:number,pos:string,neg:string)=>`${Math.abs(v).toFixed(3)}°${v>=0?pos:neg}`,m=(v:number|null)=>v===null?"—":`${Math.round(v*3.28084)} ft`;
+ const state=geo.state==="LOADING"?"loading terrain…":geo.state==="ERROR"?"flat (terrain unavailable)":geo.holding?"waiting for terrain…":`terrain ✓ ${geo.streaming.loaded} tiles`;
+ return <div className="geo panel" role="status" aria-label="Position" data-testid="geo-badge">
+  <b>{geo.airport} {geo.runway}</b> <span className="wide">{ll(p.lat,"N","S")} {ll(p.lon,"E","W")}</span> <span className="wide">TRK {Math.round(geo.trackDeg).toString().padStart(3,"0")}°</span>
+  <span>MSL {m(p.altMsl)}</span> <span>AGL {m(geo.aglM)}</span> <span className="k wide">{state}</span>
+ </div>;
+}
+export function Attribution({lines}:{lines:readonly string[]}){const text=lines.join(" · ");return <div className="attribution" title={text} data-testid="attribution">{text}</div>}
 const said=(i:string)=>i.replaceAll("_"," ").toLowerCase(),pc=(x:number)=>`${Math.round(x*100)}%`;
 /** The Jev copilot: what it recommends now, who decided (Jev, or XGBoost when Jev was unsure), and its health. */
 function Copilot({hud}:{hud:HudState}){
@@ -129,6 +157,7 @@ export function Help({onClose}:{onClose:()=>void}){
   <p><kbd>A</kbd> autopilot on/off — the autopilot takes off, flies through the gate and lands. It needs a Jev key (open <b>Jev &amp; learning</b>), which also turns on learning: every finished flight is remembered in this browser.</p>
   <p>Manual (any flight input disengages the autopilot): <kbd>W</kbd>/<kbd>↑</kbd> climb · <kbd>S</kbd>/<kbd>↓</kbd> descend · <kbd>←</kbd>/<kbd>Q</kbd> left · <kbd>→</kbd>/<kbd>E</kbd> right · <kbd>Shift</kbd> slow · <kbd>X</kbd> abort. On touch screens use the on-screen pad.</p>
   <p><kbd>C</kbd> cycle camera · <kbd>1</kbd>–<kbd>4</kbd> chase / cockpit / orbit (drag) / tower · <kbd>P</kbd> or <kbd>Space</kbd> pause · <kbd>+</kbd>/<kbd>-</kbd> time rate · <kbd>R</kbd> restart · <kbd>N</kbd> new scenario · <kbd>I</kbd> instruments · <kbd>L</kbd> Learning Lab (new tab) · <kbd>H</kbd> help</p>
+  <p><b>Real world:</b> on the start card pick <b>From</b> an airport and runway (or add <code>?airport=VNKT&amp;runway=02</code> to the URL). Real terrain streams in around and ahead of the aircraft; the airfield itself stays flat, and flying into terrain beyond it is a crash.</p>
   <p className="k">Fly through the orange gate, then land back on runway 18. The balloon is the moving obstacle.</p>
   <button onClick={onClose}>Close</button>
  </div></div>;

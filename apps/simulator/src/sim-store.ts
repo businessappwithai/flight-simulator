@@ -1,4 +1,4 @@
-import type {CopilotAdvice,CopilotStatus,FlightTrace,LearningBook,LearningInsight,PilotIntent,SimPilot,WorldSnapshot} from "@flight/protocol";
+import type {CopilotAdvice,CopilotStatus,FlightTrace,GeoCatalogAirport,GeoStatus,LearningBook,LearningInsight,PilotIntent,SimPilot,TerrainPatch,WorldSnapshot} from "@flight/protocol";
 import {SimulationWorkerClient,type WorldEvent} from "./worker-client.ts";
 /**
  * Single source of truth for the presentation layer. Holds only protocol snapshots received from the
@@ -13,7 +13,11 @@ export interface HudState{world?:WorldSnapshot;pilot:SimPilot;intent:PilotIntent
  /** Recent flights kept as Control Room telemetry, newest last. */
  traces:{flights:number;manual:number;autopilot:number};
  /** Jev copilot: its latest recommendation and the Jev / XGBoost status (only while a key is saved). */
- copilot?:CopilotAdvice;copilotStatus?:CopilotStatus}
+ copilot?:CopilotAdvice;copilotStatus?:CopilotStatus;
+ /** Real-world anchoring: the airport/runway the flight starts from (none = procedural airfield) and where it is. */
+ geo?:GeoStatus;airport?:string;runway?:string;catalog:readonly GeoCatalogAirport[]}
+/** Terrain mesh changes for the 3D view; `clear` drops everything first (the world was re-anchored). */
+export interface TerrainDiff{add:readonly TerrainPatch[];remove:readonly string[];clear:boolean}
 /**
  * Browser persistence. Every access is guarded: storage can be disabled (private mode, blocked site data) or
  * full, and the simulator must keep flying either way.
@@ -37,28 +41,34 @@ export function jevKeyProblem(key:string):string|undefined{
  if(key.length>512)return "That key is too long.";
  return undefined;
 }
-export interface StoreOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;workerUrl?:URL}
+export interface StoreOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;workerUrl?:URL;airport?:string;runway?:string;terrainUrl?:string}
 export class SimStore{
  readonly client:SimulationWorkerClient;
  latest?:WorldEvent;prevHeading?:number;turnDt=0;
  seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;paused=false;intent:PilotIntent="HOLD";started=false;jevKey?:string;
  learning:LearningSummary={flights:0,landings:0,crashes:0,experiences:0,manualFlights:0,autopilotFlights:0};
  traces:FlightTrace[]=[];
+ airport?:string;runway?:string;terrainUrl?:string;catalog:readonly GeoCatalogAirport[]=[];
+ /** Terrain meshes currently shown, by tile key (the 3D view mirrors this through onTerrain). */
+ readonly terrain=new Map<string,TerrainPatch>();#terrainEpoch=0;#terrainListeners=new Set<(d:TerrainDiff)=>void>();
  fps=0;simRate=0;#tickDebt=0;#steppedTicks=0;#rateClock=performance.now();#frames=0;
  #listeners=new Set<()=>void>();#hud:HudState;#dirty=true;#lastNotify=0;#lastPhase="";#bannerTimer?:ReturnType<typeof setTimeout>;#errorTimer?:ReturnType<typeof setTimeout>;
  #banner?:HudState["banner"];#error?:string;#resetListeners=new Set<()=>void>();
  constructor(o:StoreOptions){
   this.jevKey=storage.get(JEV_KEY_STORAGE)||undefined;
   // The autopilot needs a Jev key; without one the flight starts under manual control.
-  this.seed=o.seed;this.scenario=o.scenario;this.pilot=this.jevKey?o.pilot:"MANUAL";this.rate=o.rate;
+  this.seed=o.seed;this.scenario=o.scenario;this.pilot=this.jevKey?o.pilot:"MANUAL";this.rate=o.rate;this.airport=o.airport;this.runway=o.runway;this.terrainUrl=o.terrainUrl;
   this.client=new SimulationWorkerClient(o.workerUrl);
   this.client.onError=m=>this.showError(`Simulation: ${m}`);
   this.client.onEvent(e=>{
    if(e.type==="LEARNING"){this.#learned(e.book,e.reason);return}
    if(e.type==="TRACE"){this.#traced(e.trace);return}
+   if(e.type==="GEO_CATALOG"){this.catalog=e.airports;this.#notify(true);return}
+   if(e.type==="TERRAIN"){this.#terrainDiff(e.epoch,e.add,e.remove,!!e.clear);return}
    if(e.type!=="WORLD")return;const prev=this.latest?.world;
    this.turnDt=prev?Number(e.world.tick-prev.tick)/120:0;this.prevHeading=prev?.aircraft.heading;this.latest=e;this.#phase(e.world);this.#dirty=true});
   this.client.send({type:"SET_LEARNING",enabled:!!this.jevKey});this.client.send({type:"SET_JEV",apiKey:this.jevKey??null});
+  if(this.airport)this.#sendWorld();
   this.#hud=this.#snapshot();this.restart();
   // After the first restart, which clears banners: a warning about unreadable saved learning must stay visible.
   this.#loadLearning();this.#loadTraces();
@@ -70,7 +80,18 @@ export class SimStore{
  #snapshot():HudState{const l=this.latest;return {world:l?.world,pilot:this.pilot,intent:this.intent,autopilotMode:l?.autopilotMode??"",scenarioId:l?.scenarioId??"—",paused:this.paused,rate:this.rate,fps:this.fps,simRate:this.simRate,checksum:this.client.checksum,banner:this.#banner,error:this.#error,version:(this.#hud?.version??0)+1,
   started:this.started,jevKeyHint:this.jevKey?`••••${this.jevKey.slice(-4)}`:undefined,learning:this.learning,insight:this.jevKey?l?.insight:undefined,
   copilot:this.jevKey?l?.copilot:undefined,copilotStatus:this.jevKey?l?.copilotStatus:undefined,
-  traces:{flights:this.traces.length,manual:this.traces.filter(t=>t.pilots.includes("MANUAL")).length,autopilot:this.traces.filter(t=>t.pilots.includes("AUTOPILOT")).length}}}
+  traces:{flights:this.traces.length,manual:this.traces.filter(t=>t.pilots.includes("MANUAL")).length,autopilot:this.traces.filter(t=>t.pilots.includes("AUTOPILOT")).length},
+  geo:l?.geo,airport:this.airport,runway:this.runway,catalog:this.catalog}}
+ // ---- Real-world terrain (worker → 3D view)
+ onTerrain(l:(d:TerrainDiff)=>void){this.#terrainListeners.add(l);return()=>{this.#terrainListeners.delete(l)}}
+ #terrainDiff(epoch:number,add:readonly TerrainPatch[],remove:readonly string[],clear:boolean){
+  if(clear)this.#terrainEpoch=epoch;else if(epoch!==this.#terrainEpoch)return; // a patch from before the last re-anchoring
+  if(clear)this.terrain.clear();for(const k of remove)this.terrain.delete(k);for(const p of add)this.terrain.set(p.key,p);
+  for(const l of this.#terrainListeners)l({add,remove,clear});
+ }
+ #sendWorld(){this.client.send({type:"SET_WORLD",airport:this.airport??null,...(this.runway?{runway:this.runway}:{}),...(this.terrainUrl?{terrainUrl:this.terrainUrl}:{})})}
+ /** Fly from a real airport and runway (or back to the procedural airfield with null); the aircraft returns to the runway. */
+ setWorld(airport:string|null,runway?:string){this.airport=airport??undefined;this.runway=airport?runway:undefined;this.#sendWorld();this.restart()}
  onReset(l:()=>void){this.#resetListeners.add(l);return()=>{this.#resetListeners.delete(l)}}
  // ---- Called once per rendered frame by the R3F SimulationDriver.
  frame(rawDelta:number,hidden:boolean){

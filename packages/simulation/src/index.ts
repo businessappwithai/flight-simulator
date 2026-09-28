@@ -67,8 +67,17 @@ export interface SimulationSnapshot {
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const dist = (a: Vec3, b: Vec3) => Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
 
+/**
+ * Terrain height (m, relative to the runway's y = 0) under a local (x, z). Must be a pure function of its inputs
+ * (e.g. a fully loaded `SimulationWorld`), or runs stop being reproducible. Without one the ground is flat at 0.
+ */
+export type GroundHeight = (x: number, z: number) => number;
+
 export class DeterministicSimulation {
   readonly clock = new SimulationClock();
+  #ground: GroundHeight | undefined;
+  /** Sets (or clears) the terrain under the aircraft; the flat default keeps every existing checksum unchanged. */
+  setGround(ground: GroundHeight | undefined): void { this.#ground = ground; }
   #rng = new SplitMix64(1n);
   #aircraft!: AircraftState;
   #entities: EntityState[] = [];
@@ -114,7 +123,8 @@ export class DeterministicSimulation {
     const speed = clamp(oldSpeed + (thrust - drag) * PHYSICS_DT, 0, 90);
 
     const horizontal = Math.cos(pitch) * speed;
-    const vy = Math.sin(pitch) * speed - (speed < 12 && this.#aircraft.position.y > 0 ? 4 : 0);
+    const groundHere = this.#ground ? this.#ground(this.#aircraft.position.x, this.#aircraft.position.z) : 0;
+    const vy = Math.sin(pitch) * speed - (speed < 12 && this.#aircraft.position.y > groundHere ? 4 : 0);
     const velocity = {
       x: Math.sin(heading) * horizontal,
       y: vy,
@@ -128,9 +138,11 @@ export class DeterministicSimulation {
 
     let crashed = false;
     let grounded = false;
-    if (position.y <= 0) {
-      if (Math.abs(velocity.y) > 8 || Math.abs(roll) > 0.35) crashed = true;
-      position = { ...position, y: 0 };
+    const ground = this.#ground ? this.#ground(position.x, position.z) : 0;
+    if (position.y <= ground) {
+      // Off the (flat) airfield, touching real terrain is controlled flight into terrain, not a landing.
+      if (Math.abs(velocity.y) > 8 || Math.abs(roll) > 0.35 || (this.#ground && ground !== 0)) crashed = true;
+      position = { ...position, y: ground };
       grounded = true;
     }
 

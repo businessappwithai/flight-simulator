@@ -6,6 +6,7 @@ import {FlightTraceRecorder,LearningRecorder,emptyBook,parseBook,situationOf} fr
 import {Copilot} from "@flight/copilot";
 import {observationFeatures} from "@flight/cognition";
 import {XGBoostBestPracticeClient} from "@flight/experience/xgboost-client";
+import {AirportIndex,GeoWorld,SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV,parseOurAirports,terrariumSource} from "@flight/geospatial";
 // Authoritative flight simulation off the render thread. The page only sends pilot commands and STEP requests.
 const MAX_TICKS_PER_STEP=240,LEARN_EVERY_TICKS=30n;
 const sim=new DeterministicSimulation(),controller=new IntentController(),sensors=new PerfectSensorSuite(),learner=new LearningRecorder(),tracer=new FlightTraceRecorder();
@@ -13,11 +14,26 @@ let scenario:Scenario=defaultScenario(1n),world:WorldSnapshot=sim.reset(scenario
 let controls:AircraftControls={aileron:0,elevator:0,rudder:0,throttle:0},flight=0,ended=false,advice:CopilotAdvice|undefined;
 // The XGBoost worker is served next to this one (xgb.worker.js); under Bun (tests) the client finds its source.
 const copilot=new Copilot({xgboost:()=>new XGBoostBestPracticeClient(typeof Bun==="undefined"?new URL("xgb.worker.js",self.location.href):undefined)});
-const emit=(e:SimEvent)=>postMessage(e);
+const emit=(e:SimEvent,transfer:Transferable[]=[])=>postMessage(e,{transfer});
+// Real-world anchoring (SET_WORLD): real terrain for physics and rendering around a real runway.
+const airports=new AirportIndex(parseOurAirports(SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV));
+let geo:GeoWorld|undefined,geoEpoch=0;
+const pose=()=>({position:world.aircraft.position,velocity:world.aircraft.velocity,heading:world.aircraft.heading});
+function setWorld(airport:string|null,runway?:string,terrainUrl?:string){
+ geo?.dispose();geo=undefined;sim.setGround(undefined);const epoch=++geoEpoch;
+ emit({type:"TERRAIN",epoch,add:[],remove:[],clear:true});
+ if(airport!==null){
+  const g=new GeoWorld({airports,airport,runway,terrain:terrariumSource(terrainUrl?{template:terrainUrl}:{}),
+   onPatches:(add,remove)=>{if(geo===g)emit({type:"TERRAIN",epoch,add,remove},add.flatMap(p=>[p.positions.buffer,p.colors.buffer,p.indices.buffer]))},
+   onChange:()=>{if(geo===g){if(g.state==="ERROR")sim.setGround(undefined);else g.update(pose());publish()}}});
+  geo=g;sim.setGround(g.ground);void g.prepare();
+ }
+ world=sim.reset(scenario);controls={aileron:0,elevator:0,rudder:0,throttle:0};
+}
 const INTENTS=new Set<PilotIntent>(["HOLD","TURN_LEFT","TURN_RIGHT","CLIMB","DESCEND","SLOW","REROUTE","ABORT"]);
 function publish(seq?:number){emit({type:"WORLD",world,seq,controls,pilot,intent,autopilotMode:world.objective.phase==="COMPLETE"?"LANDED":world.objective.phase==="FAILED"?"CRASHED":autopilotTarget(world).mode,scenarioId:scenario.id,paused,
  learning:learner.enabled,insight:learner.enabled?learner.insight(sensors.observe(world)):undefined,
- ...(copilot.enabled||copilot.status.jev!=="OFF"?{copilot:advice,copilotStatus:copilot.status}:{})})}
+ ...(copilot.enabled||copilot.status.jev!=="OFF"?{copilot:advice,copilotStatus:copilot.status}:{}),...(geo?{geo:geo.status(pose())}:{})})}
 // Learning and traces observe the flight; they never feed back into the controls, so runs stay bit-for-bit
 // deterministic. Manual and autopilot flying are recorded alike, as the pilot intent being flown.
 const flownIntent=()=>pilot==="AUTOPILOT"?autopilotIntent(world):intent;
@@ -58,9 +74,13 @@ onmessage=async({data}:MessageEvent<SimCommand>)=>{
    case "STEP":{
     const ticks=Math.max(0,Math.min(MAX_TICKS_PER_STEP,Math.floor(Number(data.ticks)||0)));
     const done=()=>world.objective.phase==="COMPLETE"||world.objective.phase==="FAILED";
+    // With real terrain the clock holds until every tile under the aircraft is loaded, so no tick is ever computed
+    // with partial terrain: the flight is the same however slowly the network delivers.
+    if(geo&&!paused&&ticks>0){const wait=geo.state==="LOADING"||geo.ensureAround(world.aircraft.position.x,world.aircraft.position.z);geo.holding=!!wait;if(wait){publish(data.seq);return}}
     if(!paused)for(let i=0;i<ticks&&!done();i++){
      if(learner.enabled&&world.tick%LEARN_EVERY_TICKS===0n)observeFlight();
      controls=pilot==="AUTOPILOT"?autopilotControls(world):controller.controls(intent,sensors.observe(world));world=sim.step(controls)}
+    geo?.update(pose());
     const finishing=done()&&!ended;if(finishing)ended=true;
     const landed=world.objective.phase==="COMPLETE";
     if(!done()&&!paused&&ticks>0)copilot.advise(world.tick,sensors.observe(world),flownIntent(),takeAdvice);
@@ -70,10 +90,17 @@ onmessage=async({data}:MessageEvent<SimCommand>)=>{
      const trace=finishing?tracer.finish(landed?"LANDED":"CRASHED",world.tick,checksum,world.objective.phase):undefined;if(trace)emit({type:"TRACE",trace})}
     return;
    }
+   case "SET_WORLD":{
+    if(data.airport!==null&&(typeof data.airport!=="string"||!airports.find(data.airport)))throw new Error(`unknown airport ${String(data.airport)}`);
+    if(data.runway!==undefined&&typeof data.runway!=="string")throw new Error("invalid runway");
+    if(data.terrainUrl!==undefined&&(typeof data.terrainUrl!=="string"||!/^(https?:\/\/|\/|\.)/.test(data.terrainUrl)||!/\{z\}.*\{x\}.*\{y\}/.test(data.terrainUrl)))throw new Error("invalid terrain URL template");
+    setWorld(data.airport,data.runway,data.terrainUrl);publish();return;
+   }
    case "RESTORE":throw new Error("RESTORE is not supported by the simulator worker");
    default:throw new Error(`unknown command ${JSON.stringify((data as any)?.type)}`);
   }
  }catch(e){emit({type:"ERROR",message:e instanceof Error?e.message:String(e)})}
 };
 beginFlight();
+emit({type:"GEO_CATALOG",airports:airports.airports.filter(a=>a.runways.some(r=>!r.closed)).map(a=>({ident:a.ident,name:a.name,municipality:a.municipality,country:a.country,runways:a.runways.filter(r=>!r.closed).flatMap(r=>[r.le.ident,r.he.ident])}))});
 emit({type:"READY"});

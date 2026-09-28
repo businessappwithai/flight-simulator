@@ -24,17 +24,21 @@ export function sceneryHeight(x:number,z:number){const r=Math.hypot(x,z);if(r<=F
  const t=Math.min(1,(r-FLAT_RADIUS)/2600),ramp=t*t*(3-2*t),ridges=1-Math.abs(fbm(x/2200,z/2200)*2-1);
  return ramp*(120+fbm(x/900+7,z/900-3)*380+ridges*ridges*1100*Math.min(1,(r-FLAT_RADIUS)/5000))}
 export interface Scenery{sun:THREE.DirectionalLight;sunDirection:THREE.Vector3;update(focus:THREE.Vector3,time:number):void;dispose():void}
-/** Builds the scenery under `root` (so it can be removed as one unit) and sets the scene's fog and environment. */
-export function buildScenery(root:THREE.Object3D,scene:THREE.Scene,renderer:THREE.WebGLRenderer):Scenery{
+/**
+ * Builds the scenery under `root` (so it can be removed as one unit) and sets the scene's fog and environment.
+ * With `geo` (anchored to a real airport) the procedural hills, lake and river are left out: real terrain streams in
+ * around the airfield instead, visible to the horizon, so the sky follows the camera and the fog starts far out.
+ */
+export function buildScenery(root:THREE.Object3D,scene:THREE.Scene,renderer:THREE.WebGLRenderer,{geo=false}:{geo?:boolean}={}):Scenery{
  // --- Sky, sun and atmosphere
- const sky=new Sky();sky.scale.setScalar(40000);root.add(sky);
+ const sky=new Sky();sky.scale.setScalar(geo?1.2e6:40000);root.add(sky);
  const u=sky.material.uniforms;u.turbidity!.value=5.5;u.rayleigh!.value=1.35;u.mieCoefficient!.value=.004;u.mieDirectionalG!.value=.82;
  const sunDirection=new THREE.Vector3().setFromSphericalCoords(1,THREE.MathUtils.degToRad(90-38),THREE.MathUtils.degToRad(145));
  u.sunPosition!.value.copy(sunDirection);
  const pmrem=new THREE.PMREMGenerator(renderer),envScene=new THREE.Scene(),envSky=new Sky();envSky.scale.setScalar(1000);
  for(const k of ["turbidity","rayleigh","mieCoefficient","mieDirectionalG","sunPosition"])envSky.material.uniforms[k]!.value=u[k]!.value;
  envScene.add(envSky);scene.environment=pmrem.fromScene(envScene).texture;pmrem.dispose();
- scene.fog=new THREE.Fog(0xc4d6e6,1500,14000);
+ scene.fog=geo?new THREE.Fog(0xc4d6e6,20000,380000):new THREE.Fog(0xc4d6e6,1500,14000);
  root.add(new THREE.HemisphereLight(0xd8ecff,0x55643a,.9));
  const sun=new THREE.DirectionalLight(0xfff1dc,3.1);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);
  const sc=sun.shadow.camera;sc.left=-120;sc.right=120;sc.top=120;sc.bottom=-120;sc.near=10;sc.far=1200;sun.shadow.bias=-.0004;sun.shadow.normalBias=.6;
@@ -51,7 +55,8 @@ export function buildScenery(root:THREE.Object3D,scene:THREE.Scene,renderer:THRE
  });
  const ground=new THREE.Mesh(new THREE.CircleGeometry(FLAT_RADIUS+60,96),new THREE.MeshStandardMaterial({map:texture(fields,9,renderer),roughness:1,metalness:0}));
  ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;root.add(ground);
- // --- Hills and mountains beyond the flying area
+ if(!geo){
+ // --- Hills and mountains beyond the flying area, lake and river (procedural airfield only)
  const size=36000,seg=220,tg=new THREE.PlaneGeometry(size,size,seg,seg);tg.rotateX(-Math.PI/2);
  const pos=tg.attributes.position!,colors=new Float32Array(pos.count*3),c=new THREE.Color();
  for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i),h=sceneryHeight(-x,z);pos.setY(i,h-.6);
@@ -63,6 +68,7 @@ export function buildScenery(root:THREE.Object3D,scene:THREE.Scene,renderer:THRE
  const water=new THREE.MeshStandardMaterial({color:0x2f5f78,roughness:.06,metalness:.35,envMapIntensity:1.3});
  const lake=new THREE.Mesh(new THREE.CircleGeometry(420,64),water);lake.rotation.x=-Math.PI/2;lake.position.copy(toThree(-900,.15,1150));lake.scale.set(1.5,1,1);root.add(lake);
  const river=new THREE.Mesh(new THREE.PlaneGeometry(55,5200),water);river.rotation.x=-Math.PI/2;river.rotation.z=.35;river.position.copy(toThree(1300,.12,300));root.add(river);
+ }
  // --- Airport: grass strip, runway with markings, taxiway, apron, hangars, tower, windsock, edge lights
  const len=RUNWAY.zEnd-RUNWAY.zStart,mid=(RUNWAY.zEnd+RUNWAY.zStart)/2;
  const grass=new THREE.Mesh(new THREE.PlaneGeometry(260,len+300),new THREE.MeshStandardMaterial({color:0x6f9a45,roughness:1}));grass.rotation.x=-Math.PI/2;grass.position.copy(toThree(-40,.04,mid));grass.receiveShadow=true;root.add(grass);
@@ -120,6 +126,7 @@ export function buildScenery(root:THREE.Object3D,scene:THREE.Scene,renderer:THRE
  return {sun,sunDirection,dispose(){scene.environment=null;scene.fog=null;envTexture?.dispose();root.traverse(o=>{const m=o as THREE.Mesh;m.geometry?.dispose();const mats=Array.isArray(m.material)?m.material:m.material?[m.material]:[];for(const x of mats){for(const v of Object.values(x))if(v instanceof THREE.Texture)v.dispose();x.dispose()}});root.clear()},update(focus,time){
   // Keep the shadow frustum centred on the aircraft so shadows stay crisp wherever it flies.
   sun.position.copy(focus).addScaledVector(sunDirection,500);sun.target.position.copy(focus);sun.target.updateMatrixWorld();
+  if(geo)sky.position.copy(focus);
   clouds.position.x=(time*1.2)%4000;sock.rotation.y=Math.sin(time*.7)*.15;
  }};
 }

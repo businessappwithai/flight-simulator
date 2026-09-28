@@ -98,3 +98,49 @@ test("the Jev copilot switches with SET_JEV and never changes the flight, even w
  from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:null});const off=await next("WORLD",from);expect(off.copilotStatus).toBeUndefined();
  from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:42});expect((await next("ERROR",from)).message).toBe("invalid Jev key");
 }finally{w.terminate()}},60_000);
+
+// ---- Real-world anchoring: a local Terrarium tile server stands in for AWS (synthetic ridge north of Chennai).
+import {deflateSync} from "node:zlib";
+import {encodeTerrarium,tileBounds} from "@flight/geospatial";
+function terrainServer(delayMs:()=>number){
+ const png=(z:number,x:number,y:number)=>{const n=32,b=tileBounds({z,x,y}),raw=new Uint8Array(n*(n*3+1));
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++){const lat=b.north+(b.south-b.north)*(j+.5)/n,h=15+Math.max(0,(lat-13.1)*111_000/20);raw.set(encodeTerrarium(h),j*(n*3+1)+1+i*3)}
+  const chunk=(type:string,data:Uint8Array)=>{const c=new Uint8Array(12+data.length),dv=new DataView(c.buffer);dv.setUint32(0,data.length);c.set(new TextEncoder().encode(type),4);c.set(data,8);return c};
+  const ihdr=new Uint8Array(13),dv=new DataView(ihdr.buffer);dv.setUint32(0,n);dv.setUint32(4,n);ihdr[8]=8;ihdr[9]=2;
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",ihdr),chunk("IDAT",new Uint8Array(deflateSync(raw))),chunk("IEND",new Uint8Array())])};
+ let requests=0;
+ const server=Bun.serve({port:0,async fetch(req){const m=/\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(new URL(req.url).pathname);if(!m)return new Response("no",{status:404});requests++;
+  await Bun.sleep(delayMs());return new Response(png(+m[1]!,+m[2]!,+m[3]!),{headers:{"content-type":"image/png"}})}});
+ return {url:`http://localhost:${server.port}/{z}/{x}/{y}.png`,stop:()=>server.stop(true),get requests(){return requests}};
+}
+async function geoFlight(delay:()=>number){
+ const srv=terrainServer(delay),{w,inbox,next}=worker();try{
+  const catalog=await next("GEO_CATALOG");expect(catalog.airports.map((a:any)=>a.ident)).toContain("VOMM");
+  w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",terrainUrl:srv.url});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
+  const first=await next("WORLD");expect(first.geo).toMatchObject({airport:"VOMM",runway:"07",headingDeg:72});
+  let seq=0,last:any,holds=0;
+  for(let i=0;i<400;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);
+   if(last.geo.holding||last.geo.state==="LOADING"){holds++;await Bun.sleep(5);continue}
+   if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
+  const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);
+  for(let i=0;i<100&&!inbox.some(x=>x.type==="TERRAIN"&&x.add.length);i++)await Bun.sleep(10);
+  return {last,chk,holds,inbox,requests:srv.requests};
+ }finally{w.terminate();srv.stop()}
+}
+test("anchored to VOMM 07 with real terrain: the flight lands, streams terrain, and matches whatever the tile latency",async()=>{
+ const fast=await geoFlight(()=>0),slow=await geoFlight(()=>5+Math.floor(Math.random()*40));
+ expect(fast.last.world.objective.phase).toBe("COMPLETE");expect(fast.last.geo.state).toBe("READY");
+ expect(fast.last.geo.anchor.elevationM).toBeCloseTo(15,0);expect(fast.last.geo.simTiles).toBeGreaterThanOrEqual(9);expect(fast.last.geo.manifest).toMatch(/^[0-9a-f]{64}$/);
+ expect(Math.abs(fast.last.geo.position.lat-12.99)).toBeLessThan(.05);expect(fast.last.geo.aglM).toBeCloseTo(0,1);
+ expect(slow.chk.checksum).toBe(fast.chk.checksum);expect(slow.last.world.tick).toBe(fast.last.world.tick);expect(slow.last.geo.manifest).toBe(fast.last.geo.manifest);
+ expect(slow.holds).toBeGreaterThan(0);
+ // The airfield is flat, so the mission is identical to the procedural airfield's.
+ const ref=await direct(defaultScenario(1n));expect(fast.chk.checksum).toBe(ref.chk);
+ const patches=fast.inbox.filter((x:any)=>x.type==="TERRAIN").flatMap((x:any)=>x.add);
+ expect(patches.length).toBeGreaterThan(5);expect(patches[0].positions).toBeInstanceOf(Float32Array);expect(patches[0].indices).toBeInstanceOf(Uint16Array);
+},60_000);
+test("SET_WORLD validates its input, and null returns to the procedural airfield",async()=>{const {w,inbox,next}=worker();try{
+ for(const c of [{type:"SET_WORLD",airport:"ZZZZ"},{type:"SET_WORLD",airport:"VOMM",runway:"99"},{type:"SET_WORLD",airport:"VOMM",terrainUrl:"javascript:alert(1)"},{type:"SET_WORLD",airport:"VOMM",terrainUrl:"https://x/tiles.png"}])w.postMessage(c);
+ await Bun.sleep(100);expect(inbox.filter(x=>x.type==="ERROR")).toHaveLength(4);
+ const from=inbox.length;w.postMessage({type:"SET_WORLD",airport:null});const clear=await next("TERRAIN",from);expect(clear.clear).toBe(true);const wd=await next("WORLD",from);expect(wd.geo).toBeUndefined();
+}finally{w.terminate()}});

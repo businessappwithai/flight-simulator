@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useRef} from "react";
 import {useFrame,useThree} from "@react-three/fiber";
 import * as THREE from "three";
-import type {EntityState,WorldSnapshot} from "@flight/protocol";
+import type {EntityState,GeoAirportMarker,TerrainPatch,WorldSnapshot} from "@flight/protocol";
 import {buildScenery,toThree,type Scenery} from "./scenery.ts";
 import {createAircraft,type AircraftModel} from "./aircraft-model.ts";
 import {CameraRig,type CameraMode} from "./cameras.ts";
@@ -14,9 +14,9 @@ import type {SimStore} from "./sim-store.ts";
 export function SimulationDriver({store}:{store:SimStore}){
  useFrame((_,delta)=>store.frame(delta,document.hidden));return null;
 }
-export function Scenery({onReady}:{onReady:(s:Scenery)=>void}){
+export function Scenery({onReady,geo=false}:{onReady:(s:Scenery)=>void;geo?:boolean}){
  const {scene,gl}=useThree();const root=useMemo(()=>new THREE.Group(),[]);
- useEffect(()=>{const s=buildScenery(root,scene,gl);onReady(s);return()=>s.dispose()},[root,scene,gl,onReady]);
+ useEffect(()=>{const s=buildScenery(root,scene,gl,{geo});onReady(s);return()=>s.dispose()},[root,scene,gl,onReady,geo]);
  return <primitive object={root}/>;
 }
 export function Aircraft({store,model}:{store:SimStore;model:AircraftModel}){
@@ -78,5 +78,50 @@ export function QualityGovernor({store,quality}:{store:SimStore;quality:"high"|"
   if(level.current===1&&gl.shadowMap.enabled){gl.shadowMap.enabled=false;scene.traverse(o=>{const m=(o as THREE.Mesh).material as THREE.Material|undefined;if(m)m.needsUpdate=true});store.toast("Low frame rate — shadows disabled")}
   else{setDpr(Math.max(.75,gl.getPixelRatio()*.6));store.toast("Low frame rate — render resolution reduced")}});
  return null;
+}
+/**
+ * Real terrain streamed by the worker. Each patch keeps its vertices as float32 offsets from a centre held in the
+ * mesh position (double precision in JS); three.js combines it with the camera in doubles, which is what keeps
+ * distant tiles free of float32 jitter (the floating origin).
+ */
+export function GeoTerrain({store}:{store:SimStore}){
+ const group=useMemo(()=>new THREE.Group(),[]);
+ const material=useMemo(()=>new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,metalness:0}),[]);
+ useEffect(()=>{
+  const meshes=new Map<string,THREE.Mesh>();
+  const drop=(k:string)=>{const m=meshes.get(k);if(!m)return;group.remove(m);m.geometry.dispose();meshes.delete(k)};
+  const add=(p:TerrainPatch)=>{drop(p.key);const g=new THREE.BufferGeometry();
+   g.setAttribute("position",new THREE.BufferAttribute(p.positions,3));g.setAttribute("color",new THREE.BufferAttribute(p.colors,3,true));g.setIndex(new THREE.BufferAttribute(p.indices,1));g.computeVertexNormals();g.computeBoundingSphere();
+   const m=new THREE.Mesh(g,material);m.position.set(p.center[0],p.center[1],p.center[2]);m.receiveShadow=p.z>=14;m.name=`terrain:${p.key}`;group.add(m);meshes.set(p.key,m)};
+  for(const p of store.terrain.values())add(p);
+  const off=store.onTerrain(d=>{if(d.clear)for(const k of [...meshes.keys()])drop(k);for(const k of d.remove)drop(k);for(const p of d.add)add(p)});
+  return()=>{off();for(const k of [...meshes.keys()])drop(k)};
+ },[store,group,material]);
+ useEffect(()=>()=>material.dispose(),[material]);
+ return <primitive object={group}/>;
+}
+/** Far plane for the planet-scale view (terrain to the horizon) or the procedural airfield. */
+export function ViewDistance({geo}:{geo:boolean}){
+ const {camera}=useThree();
+ useEffect(()=>{const c=camera as THREE.PerspectiveCamera;c.far=geo?1.2e6:60000;c.near=geo?.5:.3;c.updateProjectionMatrix()},[camera,geo]);
+ return null;
+}
+/** Nearby real airports: a beacon at each, and runway strips once within 50 km (their positions come from the worker). */
+export function GeoAirports({airports,home}:{airports:readonly GeoAirportMarker[];home:string}){
+ const key=home+"#"+airports.map(a=>`${a.ident}:${a.runways.length}:${a.position.map(v=>Math.round(v)).join(",")}`).join("|");
+ const group=useMemo(()=>{
+  const g=new THREE.Group(),beaconMat=new THREE.MeshStandardMaterial({color:0xffc233,emissive:0xff9900,emissiveIntensity:1.2}),stripMat=new THREE.MeshStandardMaterial({color:0x4a4d52,roughness:.9});
+  for(const a of airports){
+   // The airport being flown from is the airfield itself: no beacon on top of it.
+   if(a.ident!==home){const b=new THREE.Mesh(new THREE.CylinderGeometry(6,6,260,8),beaconMat);b.position.set(a.position[0],a.position[1]+130,a.position[2]);b.name=`airport:${a.ident}`;g.add(b);
+   const lamp=new THREE.Mesh(new THREE.SphereGeometry(28,12,8),beaconMat);lamp.position.set(a.position[0],a.position[1]+290,a.position[2]);g.add(lamp)}
+   for(const r of a.runways){const le=new THREE.Vector3(...r.le),he=new THREE.Vector3(...r.he),len=le.distanceTo(he);
+    const strip=new THREE.Mesh(new THREE.PlaneGeometry(r.widthM,len).rotateX(-Math.PI/2),stripMat);strip.position.copy(le).lerp(he,.5);
+    strip.rotation.y=Math.atan2(he.x-le.x,he.z-le.z);strip.name=`runway:${a.ident}:${r.ident}`;strip.receiveShadow=true;g.add(strip)}
+  }
+  return g;
+ },[key]); // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>()=>{group.traverse(o=>{const m=o as THREE.Mesh;m.geometry?.dispose();(m.material as THREE.Material|undefined)?.dispose()})},[group]);
+ return <primitive object={group}/>;
 }
 export type {WorldSnapshot};

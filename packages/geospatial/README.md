@@ -17,6 +17,9 @@ simulator's Web Worker. See `ARCHITECTURE.md` → *Planet-scale world* for the d
 | `sim-world` | Deterministic `SimulationWorld` (z12 decimetre grid, obstacles, runways, manifest + SHA-256) |
 | `situation` | `geoSituation`: terrain clearance, terrain ahead, mountains ahead, runway/obstacle, alternates, route |
 | `attribution` | Data-source licences and the credits to display |
+| `anchor` | `AnchorFrame` (simulator local frame ⇄ WGS84 around a runway), `runwayAnchor`, `airfieldBlend` |
+| `geo-world` | `GeoWorld`: what the simulator worker runs for a real-world flight (physics ground, hold-for-terrain, streaming, meshes, status) |
+| `sample-airports` | Bundled OurAirports-format sample (India, Kathmandu, a few world hubs) |
 
 ```bash
 bun run geo:flight VOMM VIDP          # offline, synthetic terrain
@@ -24,9 +27,11 @@ bun run geo:flight VOMM VOBL --live   # real Mapzen Terrarium tiles (s3.amazonaw
 bun test tests/geospatial.test.ts
 ```
 
-`data/ourairports-sample/` is a small hand-assembled sample in OurAirports' format; point `GEO_AIRPORTS` and
-`GEO_RUNWAYS` at the full public-domain CSVs for worldwide coverage.
+`sample-airports.ts` bundles a small hand-assembled sample in OurAirports' CSV format (so the browser worker has
+airports offline); point `GEO_AIRPORTS` and `GEO_RUNWAYS` at the full public-domain CSVs for worldwide coverage.
 
-Not in this package yet: adapters for Overture buildings / OSM aeroways from PMTiles, 3D Tiles
-(NASA 3DTilesRendererJS) in the R3F view, and wiring the streamer into `sim.worker.ts`. They plug in as
-`TileSource`s and `SimEvent`s without changing the interfaces here.
+The simulator uses it through `GeoWorld` (see `apps/simulator/src/sim.worker.ts`, `SET_WORLD`): pick an airport and
+runway on the start card, or open the simulator with `?airport=VNKT&runway=02`.
+
+Not in this package yet: adapters for Overture buildings / OSM aeroways from PMTiles and 3D Tiles
+(NASA 3DTilesRendererJS). They plug in as `TileSource`s and `TerrainPatch`-like events.

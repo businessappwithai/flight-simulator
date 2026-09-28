@@ -64,6 +64,9 @@ input[aria-invalid=true]{border-color:var(--bad)}
 /* Start card: on the runway before the take-off roll; sits just above the dock. */
 .start{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-b) + var(--dock-h) + var(--gap));width:min(420px,calc(100vw - 30px));padding:14px 16px;text-align:center;font-size:13px}
 .start b{font-size:17px}.start p{margin:6px 0}.start-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px}.start-actions button{min-height:38px;font-size:13px}
+.world-picker{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:8px 0 2px}.world-picker label{display:flex;gap:6px;align-items:center;font-size:12px}.world-picker select{max-width:230px;min-height:30px}
+.geo{position:fixed;left:50%;transform:translateX(-50%);top:calc(var(--top-h,56px) + var(--gap));padding:6px 10px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;display:flex;gap:10px;flex-wrap:wrap;max-width:min(560px,calc(100vw - 30px));pointer-events:none}
+.attribution{position:fixed;left:0;right:0;bottom:0;padding:0 8px;font-size:9px;line-height:11px;color:rgba(255,255,255,.8);text-align:center;text-shadow:0 1px 2px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Touch yoke: shown on touch devices (iPad), sits above the dock on the left. */
 .pad{position:fixed;left:var(--safe-l);bottom:calc(var(--safe-b) + var(--dock-h) + var(--gap));display:none;grid-template-columns:repeat(3,56px);gap:8px}
 .pad button{height:52px;font-size:18px}
@@ -74,7 +77,7 @@ input[aria-invalid=true]{border-color:var(--bad)}
 @media (max-width:1100px){.readout{display:none}}
 @media (max-width:900px){:root{--map:170px}.chip.opt{display:none}}
 /* Phones */
-@media (max-width:600px){:root{--map:112px;--dock-h:32vh}.buttons button,.buttons a.btn{padding:5px 8px}.dock{align-items:flex-end}.banner{top:30%;font-size:17px}.pad{grid-template-columns:repeat(3,48px)}.pad button{height:44px}}
+@media (max-width:600px){.geo{font-size:11px;gap:6px;white-space:nowrap}.geo .wide{display:none}body:has(.start) .geo{display:none}:root{--map:112px;--dock-h:32vh}.buttons button,.buttons a.btn{padding:5px 8px}.dock{align-items:flex-end}.banner{top:30%;font-size:17px}.pad{grid-template-columns:repeat(3,48px)}.pad button{height:44px}}
 @media (max-height:500px){:root{--dock-h:44vh;--map:130px}}
 </style>
 </head>

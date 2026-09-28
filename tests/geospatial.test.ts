@@ -1,15 +1,14 @@
 import {describe,expect,test} from "bun:test";
 import {deflateSync,inflateSync} from "node:zlib";
 import {
- AirportIndex,FloatingOrigin,GreatCircleRoute,LruByteCache,PRIORITY,SIM_GRID,SIM_ZOOM,SimulationWorld,TerrainTile,WorldStreamer,
+ AirportIndex,FloatingOrigin,SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV,GreatCircleRoute,LruByteCache,PRIORITY,SIM_GRID,SIM_ZOOM,SimulationWorld,TerrainTile,WorldStreamer,
  attributionFor,buildingVolume,decodePng,decodeTerrarium,destinationPoint,ecefToGeodetic,encodeTerrarium,enuToGeodetic,extractSimulationTile,
  geoSituation,geodeticToEcef,geodeticToEnu,haversineDistance,initialBearing,isAlternateCandidate,lodRings,lonLatToTile,parseCsv,parseOurAirports,
  parseTileKey,planAirportRoute,planTiles,runwayGeometry,simulationTilesForPath,terrainMesh,tileBounds,tileKey,tilesInRadius,
  type GeoPosition,type TileId,type TileSource,
 } from "@flight/geospatial";
 
-const dir="packages/geospatial/data/ourairports-sample";
-const airports=parseOurAirports(await Bun.file(`${dir}/airports.csv`).text(),await Bun.file(`${dir}/runways.csv`).text());
+const airports=parseOurAirports(SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV);
 const index=new AirportIndex(airports);
 const VOMM=index.require("VOMM"),VIDP=index.require("VIDP");
 

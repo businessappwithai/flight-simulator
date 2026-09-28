@@ -5,6 +5,7 @@
  */
 import type { LocalVector } from "./floating-origin.ts";
 import type { FloatingOrigin } from "./floating-origin.ts";
+import type { TileSource } from "./streamer.ts";
 import { type TileId, lonLatToTileFraction, tileBounds } from "./tiles.ts";
 
 export const TERRARIUM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
@@ -89,11 +90,9 @@ export function terrainMesh(t: TerrainTile, origin: FloatingOrigin, segments = 3
   return { positions, indices, epoch: origin.epoch, segments };
 }
 
-/**
- * Minimal PNG decoder (8-bit greyscale/RGB/RGBA, non-interlaced) for Terrarium tiles in workers and Bun where no
- * canvas is available. `inflate` is zlib inflate (e.g. `node:zlib` inflateSync, or pako in a browser).
- */
-export function decodePng(bytes: Uint8Array, inflate: (data: Uint8Array) => Uint8Array): { width: number; height: number; channels: number; pixels: Uint8Array } {
+export const MAX_PNG_SIDE = 4096;
+interface PngChunks { width: number; height: number; channels: number; palette?: Uint8Array; idat: Uint8Array }
+function readPng(bytes: Uint8Array): PngChunks {
   const sig = [137, 80, 78, 71, 13, 10, 26, 10];
   if (!sig.every((v, i) => bytes[i] === v)) throw new Error("png: bad signature");
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -113,24 +112,52 @@ export function decodePng(bytes: Uint8Array, inflate: (data: Uint8Array) => Uint
     else if (type === "IEND") break;
     pos += 12 + len;
   }
-  const raw = inflate(concat(idat)), stride = width * channels, out = new Uint8Array(height * stride);
+  if (!width || !height) throw new Error("png: missing IHDR");
+  // Tiles are 256–512 px; refuse absurd sizes from a hostile or broken server instead of allocating gigabytes.
+  if (width > MAX_PNG_SIDE || height > MAX_PNG_SIDE) throw new Error(`png: ${width}×${height} exceeds ${MAX_PNG_SIDE}×${MAX_PNG_SIDE}`);
+  return { width, height, channels, ...(palette ? { palette } : {}), idat: concat(idat) };
+}
+function unfilter(c: PngChunks, raw: Uint8Array) {
+  const { width, height, channels } = c, stride = width * channels, out = new Uint8Array(height * stride);
+  if (raw.length < height * (stride + 1)) throw new Error("png: truncated image data");
   for (let y = 0; y < height; y++) {
     const filter = raw[y * (stride + 1)]!, src = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1)), row = y * stride;
     for (let x = 0; x < stride; x++) {
-      const a = x >= channels ? out[row + x - channels]! : 0, b = y > 0 ? out[row - stride + x]! : 0, c = x >= channels && y > 0 ? out[row - stride + x - channels]! : 0;
+      const a = x >= channels ? out[row + x - channels]! : 0, b = y > 0 ? out[row - stride + x]! : 0, cc = x >= channels && y > 0 ? out[row - stride + x - channels]! : 0;
       let v = src[x]!;
       if (filter === 1) v += a; else if (filter === 2) v += b; else if (filter === 3) v += (a + b) >> 1;
-      else if (filter === 4) { const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c); v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c; }
+      else if (filter === 4) { const p = a + b - cc, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - cc); v += pa <= pb && pa <= pc ? a : pb <= pc ? b : cc; }
       else if (filter !== 0) throw new Error(`png: bad filter ${filter}`);
       out[row + x] = v & 255;
     }
   }
-  if (palette) { // expand indexed colour to RGB
+  if (c.palette) { // expand indexed colour to RGB
     const rgb = new Uint8Array(width * height * 3);
-    for (let i = 0; i < width * height; i++) rgb.set(palette.subarray(out[i]! * 3, out[i]! * 3 + 3), i * 3);
+    for (let i = 0; i < width * height; i++) rgb.set(c.palette.subarray(out[i]! * 3, out[i]! * 3 + 3), i * 3);
     return { width, height, channels: 3, pixels: rgb };
   }
   return { width, height, channels, pixels: out };
+}
+export interface DecodedImage { width: number; height: number; channels: number; pixels: Uint8Array }
+
+/**
+ * Minimal PNG decoder (8-bit greyscale/RGB/RGBA/indexed, non-interlaced) for Terrarium tiles in workers and Bun,
+ * where no canvas is available (and canvas colour management could alter the encoded heights anyway).
+ * `inflate` is zlib inflate, e.g. `node:zlib` inflateSync.
+ */
+export function decodePng(bytes: Uint8Array, inflate: (data: Uint8Array) => Uint8Array): DecodedImage {
+  const c = readPng(bytes);
+  return unfilter(c, inflate(c.idat));
+}
+/** zlib inflate with the platform's DecompressionStream (browsers, workers and Bun). */
+export async function inflateZlib(data: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([data as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream("deflate"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+/** `decodePng` with an asynchronous inflate (defaults to DecompressionStream). */
+export async function decodePngAsync(bytes: Uint8Array, inflate: (data: Uint8Array) => Promise<Uint8Array> = inflateZlib): Promise<DecodedImage> {
+  const c = readPng(bytes);
+  return unfilter(c, await inflate(c.idat));
 }
 function concat(parts: Uint8Array[]) {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
@@ -144,16 +171,17 @@ export function terrariumSource(opts: {
   fetch?: typeof fetch;
   template?: string;
   maxZoom?: number;
-  decode: (png: Uint8Array) => { width: number; height: number; channels: number; pixels: ArrayLike<number> } | Promise<{ width: number; height: number; channels: number; pixels: ArrayLike<number> }>;
-}) {
+  decode?: (png: Uint8Array) => DecodedImage | Promise<DecodedImage>;
+}): TileSource<TerrainTile> {
+  const decode = opts.decode ?? ((png: Uint8Array) => decodePngAsync(png));
   const f = opts.fetch ?? fetch;
   return {
-    layer: "terrain" as const,
+    layer: "terrain",
     maxZoom: opts.maxZoom ?? TERRARIUM_MAX_ZOOM,
     async load(tile: TileId, signal: AbortSignal) {
       const res = await f(terrariumUrl(tile, opts.template), { signal });
       if (!res.ok) throw new Error(`terrain ${tile.z}/${tile.x}/${tile.y}: HTTP ${res.status}`);
-      const img = await opts.decode(new Uint8Array(await res.arrayBuffer()));
+      const img = await decode(new Uint8Array(await res.arrayBuffer()));
       return TerrainTile.fromTerrarium(tile, img.pixels, img.width, img.height, img.channels);
     },
     sizeOf: (t: TerrainTile) => t.byteLength,

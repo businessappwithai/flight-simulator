@@ -87,3 +87,22 @@ Invariants:
   in-flight loads that are now behind.
 - **Attribution travels with the data** (`DATA_SOURCES`, `attributionFor`): Mapzen's composite DEM sources, ODbL for
   Overture buildings and OSM, public-domain OurAirports.
+
+### Real-world flights in the simulator
+
+`SET_WORLD {airport, runway}` makes the worker create a `GeoWorld`: the simulator's flat local frame (x right, y up,
+z along the runway) is anchored to the real runway threshold with `AnchorFrame`. The mission, controller and learning
+are unchanged. Three things differ:
+
+- **Ground.** `DeterministicSimulation.setGround(geo.ground)`; the airfield (3.2 km) stays flat at y = 0 and blends
+  into real terrain (including Earth curvature) beyond it, where terrain contact is a crash. Without `setGround`
+  every existing checksum is unchanged.
+- **Hold for terrain.** Before each `STEP` the worker asks `ensureAround(x, z)`; while any z12 tile in the 3×3 block
+  under the aircraft is missing it publishes `geo.holding` and does not advance. Every tick therefore sees complete,
+  deterministic terrain: the same flight gives the same checksum on a fast or a slow network (tested with a jittery
+  local tile server in `tests/simulator-worker.test.ts`).
+- **Rendering.** A `WorldStreamer` (LOD rings, prediction) loads Terrarium tiles; loaded tiles not hidden by loaded
+  children become `TerrainPatch` meshes (`TERRAIN` events, transferred buffers). Coarser tiles sit slightly lower so
+  finer ones draw on top. Vertices are float32 offsets from a per-tile centre kept in the mesh position, so three.js
+  combines them with the camera in double precision (the floating origin). The page uses a logarithmic depth buffer
+  and a far plane of 1,200 km.

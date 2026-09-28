@@ -13,3 +13,6 @@ export * from "./route.ts";
 export * from "./sim-world.ts";
 export * from "./situation.ts";
 export * from "./attribution.ts";
+export * from "./anchor.ts";
+export * from "./sample-airports.ts";
+export * from "./geo-world.ts";
