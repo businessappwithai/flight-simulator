@@ -35,6 +35,28 @@ export interface LearningInsight{situation:string;action:PilotIntent;successRate
  * before landing or crashing) have no outcome.
  */
 export interface FlightTrace{id:string;scenarioId:string;outcome:"LANDED"|"CRASHED"|"ABANDONED";pilots:readonly SimPilot[];events:readonly RuntimeEvent[]}
+/** Local simulator coordinates as the renderer uses them: three.js (x, y, z) = simulation (−x, y, z). */
+export type Vec3Tuple=[number,number,number];
+/** A nearby airport as the page draws it (beacon plus runway strips), positioned in the anchored local frame. */
+export interface GeoAirportMarker{ident:string;name:string;position:Vec3Tuple;distanceM:number;detail:"METADATA"|"MARKER"|"BASIC"|"FULL"|"HIGHEST";runways:{ident:string;le:Vec3Tuple;he:Vec3Tuple;widthM:number}[]}
+/**
+ * Real-world placement of the flight when the simulator is anchored to an airport (`SET_WORLD`): where the local
+ * frame sits on Earth, the aircraft's WGS84 position, the terrain under it and what is streaming.
+ */
+export interface GeoStatus{airport:string;name:string;runway:string;headingDeg:number;
+ /** LOADING until the terrain around the runway is in; ERROR means real terrain is unavailable and the ground is flat. */
+ state:"LOADING"|"READY"|"ERROR";detail?:string;
+ anchor:{lat:number;lon:number;elevationM:number};
+ position:{lat:number;lon:number;altMsl:number};trackDeg:number;terrainElevationM:number|null;aglM:number|null;
+ /** True while the clock waits for the terrain under the aircraft (keeps physics independent of network timing). */
+ holding:boolean;
+ /** Deterministic terrain the physics used: tile count and SHA-256 over the tile manifest. */
+ simTiles:number;manifest?:string;
+ streaming:{wanted:number;loaded:number;inFlight:number;cacheMB:number};
+ airports:GeoAirportMarker[];attribution:string[]}
+/** One terrain tile mesh. Positions are float32 relative to `center` (three.js coordinates, kept in double precision). */
+export interface TerrainPatch{key:string;z:number;center:Vec3Tuple;positions:Float32Array;colors:Uint8Array;indices:Uint16Array}
+export interface GeoCatalogAirport{ident:string;name:string;municipality:string;country:string;runways:string[]}
 export type SimCommand=
  | {type:"RESET";seed:string;scenario?:"default"|"seeded"}
  | {type:"STEP";ticks:number;seq?:number}
@@ -46,12 +68,18 @@ export type SimCommand=
  | {type:"CLEAR_LEARNING"}
  /** The Jev key for the copilot (kept only in the worker's memory); null turns the copilot off. */
  | {type:"SET_JEV";apiKey:string|null}
- | {type:"RESTORE";snapshot:unknown};
+ | {type:"RESTORE";snapshot:unknown}
+ /** Anchor the flight to a real airport and runway (null: the procedural airfield). `terrainUrl` overrides the Terrarium tile URL template. */
+ | {type:"SET_WORLD";airport:string|null;runway?:string;terrainUrl?:string};
 export type SimEvent=
  | {type:"READY"}
- | {type:"WORLD";world:WorldSnapshot;seq?:number;controls?:AircraftControls;pilot?:SimPilot;intent?:PilotIntent;autopilotMode?:string;scenarioId?:string;paused?:boolean;learning?:boolean;insight?:LearningInsight;copilot?:CopilotAdvice;copilotStatus?:CopilotStatus}
+ | {type:"WORLD";world:WorldSnapshot;seq?:number;controls?:AircraftControls;pilot?:SimPilot;intent?:PilotIntent;autopilotMode?:string;scenarioId?:string;paused?:boolean;learning?:boolean;insight?:LearningInsight;copilot?:CopilotAdvice;copilotStatus?:CopilotStatus;geo?:GeoStatus}
  | {type:"LEARNING";book:LearningBook;reason:"LOADED"|"RECORDED"|"CLEARED"|"REJECTED"}
  | {type:"TRACE";trace:FlightTrace}
  | {type:"CHECKSUM";tick:string;checksum:string}
+ /** Terrain meshes to add and keys to drop. `epoch` changes when the world is re-anchored; patches from older epochs are stale. */
+ | {type:"TERRAIN";epoch:number;add:TerrainPatch[];remove:string[];clear?:boolean}
+ /** Airports the simulator can be anchored to (sent once at start-up). */
+ | {type:"GEO_CATALOG";airports:GeoCatalogAirport[]}
  | {type:"ERROR";message:string};
 export type InspectorCommand={type:"SEEK";tick:string}|{type:"PLAY"}|{type:"PAUSE"};
