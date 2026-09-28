@@ -73,6 +73,7 @@ export class GeoWorld {
   readonly #flat: number;
   readonly #blend: number;
   #manifest: string | undefined;
+  #manifestGeneration = 0;
   #markers: GeoAirportMarker[] = [];
   #last: { x: number; z: number; heading: number } | undefined;
   #patchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -156,8 +157,10 @@ export class GeoWorld {
         await new Promise(r => setTimeout(r, 250 * 2 ** attempt));
       }
     }
+    // Hashes finish out of order when tiles land together: only the latest generation may set the manifest.
+    const generation = ++this.#manifestGeneration;
     this.#manifest = undefined;
-    void this.#sim.checksum().then(c => { if (!this.#disposed) { this.#manifest = c; this.options.onChange?.(); } });
+    void this.#sim.checksum().then(c => { if (!this.#disposed && generation === this.#manifestGeneration) { this.#manifest = c; this.options.onChange?.(); } });
   }
 
   /**

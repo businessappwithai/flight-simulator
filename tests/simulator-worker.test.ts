@@ -124,15 +124,17 @@ async function geoFlight(delay:()=>number){
    if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
   const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);
   for(let i=0;i<100&&!inbox.some(x=>x.type==="TERRAIN"&&x.add.length);i++)await Bun.sleep(10);
-  return {last,chk,holds,inbox,requests:srv.requests};
+  // The terrain manifest is hashed asynchronously after the last tile loads: read it once it has settled.
+  let manifest:string|undefined;for(let i=0;i<100&&!manifest;i++){await Bun.sleep(10);const f=inbox.length;w.postMessage({type:"STEP",ticks:0,seq:++seq});manifest=(await next("WORLD",f)).geo.manifest}
+  return {last,chk,holds,inbox,manifest,requests:srv.requests};
  }finally{w.terminate();srv.stop()}
 }
 test("anchored to VOMM 07 with real terrain: the flight lands, streams terrain, and matches whatever the tile latency",async()=>{
  const fast=await geoFlight(()=>0),slow=await geoFlight(()=>5+Math.floor(Math.random()*40));
  expect(fast.last.world.objective.phase).toBe("COMPLETE");expect(fast.last.geo.state).toBe("READY");
- expect(fast.last.geo.anchor.elevationM).toBeCloseTo(15,0);expect(fast.last.geo.simTiles).toBeGreaterThanOrEqual(9);expect(fast.last.geo.manifest).toMatch(/^[0-9a-f]{64}$/);
+ expect(fast.last.geo.anchor.elevationM).toBeCloseTo(15,0);expect(fast.last.geo.simTiles).toBeGreaterThanOrEqual(9);expect(fast.manifest).toMatch(/^[0-9a-f]{64}$/);
  expect(Math.abs(fast.last.geo.position.lat-12.99)).toBeLessThan(.05);expect(fast.last.geo.aglM).toBeCloseTo(0,1);
- expect(slow.chk.checksum).toBe(fast.chk.checksum);expect(slow.last.world.tick).toBe(fast.last.world.tick);expect(slow.last.geo.manifest).toBe(fast.last.geo.manifest);
+ expect(slow.chk.checksum).toBe(fast.chk.checksum);expect(slow.last.world.tick).toBe(fast.last.world.tick);expect(slow.manifest).toBe(fast.manifest);
  expect(slow.holds).toBeGreaterThan(0);
  // The airfield is flat, so the mission is identical to the procedural airfield's.
  const ref=await direct(defaultScenario(1n));expect(fast.chk.checksum).toBe(ref.chk);
