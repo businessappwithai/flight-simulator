@@ -39,7 +39,8 @@ code path after the HTTP request is the one used in production.
 | Badge reports buildings and "surveyed runway" | pass |
 | Autopilot mission lands at VOMM among real buildings | pass |
 | `features=off`: terrain only, no buildings | pass |
-| Kathmandu: 121,220 buildings, surveyed runway 02 | pass |
+| Kathmandu: 121,220 buildings, surveyed runway 02 (21.95°) | pass |
+| Autopilot mission lands at Kathmandu, city and mountains in view | pass |
 | No console errors | pass |
 
 Screenshots: `screenshots/features/`.
