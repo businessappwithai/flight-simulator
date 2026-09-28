@@ -33,6 +33,7 @@ same tick and the same terrain manifest, equal to the procedural airfield's refe
 | Terrain faces were wound downwards (three.js x is mirrored) | Winding flipped; test asserts face normals point up |
 | Attribution overlapped the position badge at 1280 px | Attribution moved to a single line at the bottom edge (full text in the tooltip) |
 | On phones the position badge covered the start card's title | Badge hidden while parked on phones and compacted in flight |
+| The world picker made the start card overlap the Jev panel on phones (Pages smoke test) | Intro sentence hidden on phones; smoke test 16/16 |
 | A beacon stood on the airport being flown from | Beacons only for other airports |
 | A hostile `terrain=` server could declare a huge PNG and exhaust worker memory | PNG decoder refuses images larger than 4096×4096 |
 

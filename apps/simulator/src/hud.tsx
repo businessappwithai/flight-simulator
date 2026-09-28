@@ -68,7 +68,7 @@ export function StartPanel({hud,store}:{hud:HudState;store:SimStore}){
  return <div className="start panel" role="region" aria-label="Ready for departure" data-testid="start-panel">
   <b>{geo?`Ready on ${geo.airport} runway ${geo.runway}`:"Ready on runway 18"}</b>
   {geo&&<p className="k">{geo.name}</p>}
-  <p>{loading?"Loading real terrain around the airport…":"Engine at idle, brakes set. Start to begin the take-off roll, or use any flight control."}</p>
+  {loading?<p>Loading real terrain around the airport…</p>:<p className="intro">Engine at idle, brakes set. Start to begin the take-off roll, or use any flight control.</p>}
   <WorldPicker hud={hud} store={store}/>
   <div className="start-actions">
    <button className="primary" onClick={()=>{store.setPilot("MANUAL");store.start()}} data-testid="start-manual">Start (manual)</button>
