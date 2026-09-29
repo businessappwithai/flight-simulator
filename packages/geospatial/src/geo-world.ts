@@ -229,18 +229,24 @@ export class GeoWorld {
   async #survey() {
     const src = this.options.features;
     if (!src) return;
-    try {
-      const tiles = tilesInRadius(this.airport.position, 4000, FEATURE_ZOOM);
-      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out")), this.options.surveyTimeoutMs ?? 20_000));
-      const data = await Promise.race([Promise.all(tiles.map(t => src.load(t, this.#abort.signal))), timeout]);
-      const surveyed = surveyedRunwayAnchor(this.runway, this.airport.position, data.flatMap(d => d.aeroways));
-      if (surveyed) { this.runway = surveyed; this.#elevation = surveyed.anchor.altMsl; this.#frame = new AnchorFrame(surveyed.anchor, surveyed.headingDegT); }
-    } catch (e) {
-      if (this.#disposed) return;
+    // One slow or failed tile must not switch buildings off for the whole flight: only a source that answers none of the
+    // tiles around the airport (before the timeout) is unavailable. Tiles that failed here are retried as the flight
+    // needs them.
+    const tiles = tilesInRadius(this.airport.position, 4000, FEATURE_ZOOM);
+    const got: VectorFeatures[] = [];
+    let lastError: unknown;
+    const all = Promise.all(tiles.map(t => src.load(t, this.#abort.signal).then(v => { got.push(v); }, e => { lastError = e; })));
+    await Promise.race([all, new Promise(r => setTimeout(r, this.options.surveyTimeoutMs ?? 20_000))]);
+    if (this.#disposed) return;
+    if (!got.length) {
       // Decided once, before the flight: every feature tile of this flight is then empty (the manifest records it).
       this.featuresState = "UNAVAILABLE";
-      this.featuresDetail = `Buildings and airport surfaces unavailable (${e instanceof Error ? e.message : String(e)}).`;
+      const why = lastError === undefined ? "timed out" : lastError instanceof Error ? lastError.message : String(lastError);
+      this.featuresDetail = `Buildings and airport surfaces unavailable (${why}).`;
+      return;
     }
+    const surveyed = surveyedRunwayAnchor(this.runway, this.airport.position, got.flatMap(d => d.aeroways));
+    if (surveyed) { this.runway = surveyed; this.#elevation = surveyed.anchor.altMsl; this.#frame = new AnchorFrame(surveyed.anchor, surveyed.headingDegT); }
   }
 
   #featureNeighbourhood(p: { lat: number; lon: number }): TileId[] {
