@@ -1,0 +1,73 @@
+06:56:37 screenshot search-from
+06:57:37 planned {"t":0,"phase":"OUTBOUND","crashed":false,"grounded":false,"agl":2,"msl":13.52559698652476,"trk":68.92038206395932,"kt":0,"vs":0,"surface":"AIRFIELD","runwayBelow":null,"route":{"km":49.754210794522926,"brg":282.3698173057329,"rwyHdg":238.7304972469093,"rwy":"24","xt":0},"buildings":80933,"featurePatches":21,"terrain":14}
+06:57:43 screenshot route-planned
+06:57:43 autopilot button: locked (no Jev key)
+06:58:20 rate: 5.5 s
+06:58:23 takeoff {"t":6,"agl":23,"kt":58,"trk":69,"km":49.9,"along":-36122,"right":-34357,"target":450,"btn":"Climb","feat":37,"terrain":59}
+06:58:38 enroute {"t":18,"agl":63,"kt":99,"trk":34,"km":50.3,"along":-36632,"right":-34421,"target":450,"btn":"Turn left","feat":36,"terrain":79}
+06:58:53 enroute {"t":22,"agl":62,"kt":101,"trk":308,"km":50.2,"along":-36702,"right":-34246,"target":450,"btn":"Climb","feat":35,"terrain":83}
+06:59:10 enroute {"t":38,"agl":120,"kt":121,"trk":300,"km":49.3,"along":-36275,"right":-33453,"target":450,"btn":"Climb","feat":35,"terrain":112}
+06:59:25 screenshot climbing-out
+06:59:27 enroute {"t":44,"agl":156,"kt":126,"trk":300,"km":49,"along":-36093,"right":-33117,"target":450,"btn":"Climb","feat":35,"terrain":120}
+06:59:51 screenshot buildings
+06:59:53 enroute {"t":62,"agl":201,"kt":123,"trk":300,"km":47.9,"along":-35568,"right":-32150,"target":450,"btn":"Climb","feat":36,"terrain":153}
+07:00:09 enroute {"t":81,"agl":254,"kt":124,"trk":300,"km":46.9,"along":-35018,"right":-31136,"target":450,"btn":"Climb","feat":37,"terrain":186}
+07:00:24 enroute {"t":89,"agl":302,"kt":128,"trk":300,"km":46.4,"along":-34770,"right":-30680,"target":450,"btn":"Climb","feat":37,"terrain":195}
+07:00:39 enroute {"t":105,"agl":393,"kt":131,"trk":300,"km":45.4,"along":-34260,"right":-29739,"target":450,"btn":"Turn left","feat":36,"terrain":202}
+07:00:56 enroute {"t":121,"agl":394,"kt":111,"trk":291,"km":44.4,"along":-33578,"right":-29063,"target":450,"btn":"Climb","feat":35,"terrain":214}
+07:01:06 screenshot cruise
+07:01:11 cruise {"t":141,"agl":434,"kt":117,"trk":298,"km":43.3,"along":-32990,"right":-28062,"target":450,"btn":null,"feat":36,"terrain":230}
+07:01:26 cruise {"t":163,"agl":437,"kt":107,"trk":298,"km":42.1,"along":-32359,"right":-26982,"target":450,"btn":null,"feat":38,"terrain":244}
+07:01:42 cruise {"t":179,"agl":436,"kt":106,"trk":263,"km":41.3,"along":-31898,"right":-26250,"target":450,"btn":"Turn right","feat":37,"terrain":253}
+07:01:57 cruise {"t":207,"agl":435,"kt":106,"trk":298,"km":39.9,"along":-30934,"right":-25153,"target":450,"btn":null,"feat":35,"terrain":263}
+07:02:12 cruise {"t":232,"agl":435,"kt":106,"trk":298,"km":38.6,"along":-30126,"right":-24076,"target":450,"btn":null,"feat":33,"terrain":268}
+07:02:27 cruise {"t":258,"agl":452,"kt":107,"trk":298,"km":37.2,"along":-29288,"right":-22958,"target":450,"btn":null,"feat":32,"terrain":281}
+07:02:42 cruise {"t":288,"agl":446,"kt":106,"trk":263,"km":35.7,"along":-28332,"right":-21687,"target":450,"btn":"Turn right","feat":30,"terrain":288}
+07:02:58 cruise {"t":320,"agl":455,"kt":106,"trk":298,"km":34,"along":-27277,"right":-20368,"target":450,"btn":null,"feat":32,"terrain":292}
+07:03:13 cruise {"t":354,"agl":461,"kt":106,"trk":262,"km":32.3,"along":-26305,"right":-18800,"target":450,"btn":"Turn right","feat":31,"terrain":300}
+07:03:28 cruise {"t":389,"agl":459,"kt":106,"trk":298,"km":30.6,"along":-25145,"right":-17405,"target":450,"btn":null,"feat":30,"terrain":300}
+07:03:43 cruise {"t":419,"agl":457,"kt":106,"trk":255,"km":29.1,"along":-24143,"right":-16230,"target":450,"btn":"Turn right","feat":32,"terrain":308}
+07:03:58 cruise {"t":447,"agl":463,"kt":106,"trk":298,"km":27.7,"along":-23214,"right":-15084,"target":450,"btn":null,"feat":32,"terrain":321}
+07:04:13 cruise {"t":477,"agl":464,"kt":106,"trk":298,"km":26.2,"along":-22240,"right":-13761,"target":450,"btn":"Turn left","feat":30,"terrain":321}
+07:04:28 cruise {"t":503,"agl":425,"kt":110,"trk":297,"km":25,"along":-21450,"right":-12746,"target":450,"btn":"Turn left","feat":27,"terrain":323}
+07:04:44 cruise {"t":531,"agl":419,"kt":106,"trk":304,"km":23.6,"along":-20454,"right":-11684,"target":450,"btn":"Turn left","feat":27,"terrain":326}
+07:04:59 cruise {"t":559,"agl":417,"kt":106,"trk":296,"km":22.2,"along":-19474,"right":-10634,"target":450,"btn":"Climb","feat":28,"terrain":325}
+07:05:14 cruise {"t":590,"agl":415,"kt":106,"trk":304,"km":20.7,"along":-18410,"right":-9418,"target":450,"btn":"Turn left","feat":28,"terrain":326}
+07:05:29 cruise {"t":625,"agl":420,"kt":106,"trk":261,"km":19,"along":-17190,"right":-8101,"target":450,"btn":"Turn right","feat":25,"terrain":326}
+07:05:45 cruise {"t":660,"agl":421,"kt":106,"trk":304,"km":17.3,"along":-15980,"right":-6694,"target":450,"btn":"Turn left","feat":23,"terrain":327}
+07:06:00 cruise {"t":702,"agl":437,"kt":110,"trk":298,"km":15.4,"along":-14522,"right":-5073,"target":450,"btn":null,"feat":22,"terrain":325}
+07:06:15 cruise {"t":749,"agl":439,"kt":106,"trk":298,"km":13.5,"along":-13202,"right":-2859,"target":450,"btn":null,"feat":20,"terrain":326}
+07:06:33 rate: 807.2 s
+07:06:33 final {"t":807,"agl":450,"kt":106,"trk":298,"km":11.4,"along":-11364,"right":-375,"target":596,"btn":"Turn left","feat":16,"terrain":322}
+07:06:48 final {"t":833,"agl":450,"kt":106,"trk":228,"km":10.1,"along":-10123,"right":-11,"target":531,"btn":"Turn right","feat":18,"terrain":324}
+07:07:04 final {"t":856,"agl":445,"kt":106,"trk":227,"km":8.9,"along":-8892,"right":-11,"target":466,"btn":"Turn right","feat":22,"terrain":327}
+07:07:19 final {"t":879,"agl":448,"kt":106,"trk":232,"km":7.7,"along":-7682,"right":5,"target":403,"btn":"Descend","feat":24,"terrain":325}
+07:07:34 final {"t":899,"agl":421,"kt":105,"trk":235,"km":6.6,"along":-6617,"right":4,"target":347,"btn":"Descend","feat":26,"terrain":332}
+07:07:49 final {"t":921,"agl":393,"kt":105,"trk":234,"km":5.4,"along":-5442,"right":-8,"target":285,"btn":"Descend","feat":26,"terrain":325}
+07:08:05 final {"t":940,"agl":354,"kt":106,"trk":255,"km":4.4,"along":-4419,"right":-6,"target":232,"btn":"Turn left","feat":29,"terrain":324}
+07:08:14 screenshot final
+07:08:20 final {"t":957,"agl":339,"kt":106,"trk":241,"km":3.5,"along":-3485,"right":14,"target":183,"btn":"Descend","feat":30,"terrain":327}
+07:08:35 final {"t":974,"agl":310,"kt":106,"trk":248,"km":2.6,"along":-2564,"right":-27,"target":134,"btn":"Descend","feat":30,"terrain":329}
+07:08:51 final {"t":990,"agl":290,"kt":105,"trk":234,"km":1.8,"along":-1750,"right":-13,"target":92,"btn":"Turn right","feat":32,"terrain":328}
+07:09:09 final {"t":1003,"agl":263,"kt":105,"trk":234,"km":1.1,"along":-1080,"right":-16,"target":57,"btn":"Turn right","feat":0,"terrain":0}
+07:09:25 final {"t":1017,"agl":259,"kt":106,"trk":230,"km":0.3,"along":-322,"right":1,"target":17,"btn":"Turn right","feat":32,"terrain":324}
+07:09:40 final {"t":1031,"agl":252,"kt":106,"trk":230,"km":0.4,"along":443,"right":2,"target":0,"btn":"Turn right","feat":34,"terrain":326}
+07:09:56 final {"t":1047,"agl":244,"kt":106,"trk":244,"km":1.3,"along":1303,"right":-11,"target":0,"btn":"Descend","feat":36,"terrain":326}
+07:10:11 final {"t":1064,"agl":231,"kt":106,"trk":251,"km":2.2,"along":2184,"right":5,"target":0,"btn":"Turn left","feat":36,"terrain":324}
+07:10:26 final {"t":1081,"agl":228,"kt":106,"trk":230,"km":3.1,"along":3102,"right":-9,"target":0,"btn":"Turn right","feat":32,"terrain":325}
+07:10:41 final {"t":1099,"agl":216,"kt":106,"trk":237,"km":4.1,"along":4098,"right":21,"target":0,"btn":"Descend","feat":31,"terrain":321}
+07:10:57 final {"t":1126,"agl":219,"kt":106,"trk":225,"km":5.5,"along":5494,"right":18,"target":0,"btn":"Turn right","feat":30,"terrain":324}
+07:11:12 final {"t":1150,"agl":220,"kt":106,"trk":250,"km":6.8,"along":6779,"right":10,"target":0,"btn":"Turn left","feat":26,"terrain":325}
+07:11:27 final {"t":1176,"agl":210,"kt":106,"trk":246,"km":8.2,"along":8181,"right":-7,"target":0,"btn":"Descend","feat":24,"terrain":324}
+07:11:42 final {"t":1205,"agl":171,"kt":105,"trk":246,"km":9.7,"along":9740,"right":6,"target":0,"btn":"Turn left","feat":20,"terrain":323}
+07:11:57 final {"t":1231,"agl":140,"kt":106,"trk":245,"km":11.2,"along":11154,"right":12,"target":0,"btn":"Turn left","feat":17,"terrain":323}
+07:12:13 final {"t":1258,"agl":111,"kt":106,"trk":227,"km":12.6,"along":12571,"right":-1,"target":0,"btn":"Turn right","feat":13,"terrain":320}
+07:12:29 final {"t":1287,"agl":101,"kt":106,"trk":233,"km":14.2,"along":14158,"right":10,"target":0,"btn":"Descend","feat":9,"terrain":320}
+07:12:45 final {"t":1316,"agl":97,"kt":106,"trk":238,"km":15.7,"along":15686,"right":13,"target":0,"btn":"Descend","feat":4,"terrain":322}
+07:13:00 final {"t":1344,"agl":70,"kt":105,"trk":231,"km":17.2,"along":17168,"right":-10,"target":0,"btn":"Turn right","feat":0,"terrain":325}
+07:13:16 final {"t":1372,"agl":52,"kt":106,"trk":237,"km":18.7,"along":18675,"right":14,"target":0,"btn":"Descend","feat":0,"terrain":326}
+07:13:31 final {"t":1400,"agl":32,"kt":106,"trk":247,"km":20.2,"along":20214,"right":11,"target":0,"btn":"Turn left","feat":0,"terrain":327}
+07:13:45 end {"t":1421.725,"phase":"FAILED","crashed":true,"grounded":true,"agl":0,"msl":105.83903822116554,"trk":242.3488846492524,"kt":105.46733019636378,"vs":-3.999999940836117,"surface":"TERRAIN","runwayBelow":null,"route":{"km":21.3694858037384,"brg":58.762216003672506,"rwyHdg":238.7304972469093,"rwy":"24","xt":26.016515478571165},"buildings":305086,"featurePatches":0,"terrain":330}
+07:13:45 banner: Flew into terrain
+07:13:47 screenshot end
+07:13:47 CONSOLE_ERRORS=[]

@@ -7,6 +7,7 @@ import {createAircraft,type AircraftModel} from "./aircraft-model.ts";
 import {CameraRig,type CameraMode} from "./cameras.ts";
 import type {SimStore} from "./sim-store.ts";
 import type {TerrainProbe} from "./terrain-probe.ts";
+import {linearColors} from "./vertex-colors.ts";
 import {TilesRenderer} from "3d-tiles-renderer";
 import {GoogleCloudAuthPlugin} from "3d-tiles-renderer/plugins";
 /*
@@ -100,7 +101,7 @@ export function GeoTerrain({store,probe,hidden=false}:{store:SimStore;probe:Terr
   const meshes=new Map<string,THREE.Mesh>();
   const drop=(k:string)=>{const m=meshes.get(k);if(!m)return;probe.remove(m);group.remove(m);m.geometry.dispose();meshes.delete(k)};
   const add=(p:TerrainPatch)=>{drop(p.key);const g=new THREE.BufferGeometry();
-   g.setAttribute("position",new THREE.BufferAttribute(p.positions,3));g.setAttribute("color",new THREE.BufferAttribute(p.colors,3,true));g.setIndex(new THREE.BufferAttribute(p.indices,1));g.computeVertexNormals();g.computeBoundingSphere();
+   g.setAttribute("position",new THREE.BufferAttribute(p.positions,3));g.setAttribute("color",new THREE.BufferAttribute(linearColors(p.colors),3));g.setIndex(new THREE.BufferAttribute(p.indices,1));g.computeVertexNormals();g.computeBoundingSphere();
    const m=new THREE.Mesh(g,material);m.position.set(p.center[0],p.center[1],p.center[2]);m.receiveShadow=p.z>=14;m.name=`terrain:${p.key}`;group.add(m);meshes.set(p.key,m);
    // Only the finer levels go into the camera's ray index; coarse far-away tiles never matter for clearance.
    if(p.z>=11){m.updateMatrixWorld();probe.add(m)}};
@@ -125,7 +126,7 @@ export function GeoFeatures({store,probe,hidden=false}:{store:SimStore;probe:Ter
   const objs=new Map<string,THREE.Object3D>();const m4=new THREE.Matrix4();
   const drop=(k:string)=>{const o=objs.get(k);if(!o)return;probe.remove(o);group.remove(o);o.traverse(x=>{const mesh=x as THREE.Mesh;if(mesh.geometry&&mesh.geometry!==mats.lightGeo)mesh.geometry.dispose()});objs.delete(k)};
   const add=(p:FeaturePatch)=>{drop(p.key);const g=new THREE.Group();g.position.set(p.center[0],p.center[1],p.center[2]);g.name=`features:${p.key}`;
-   if(p.positions.length){const geo=new THREE.BufferGeometry();geo.setAttribute("position",new THREE.BufferAttribute(p.positions,3));geo.setAttribute("color",new THREE.BufferAttribute(p.colors,3,true));geo.computeVertexNormals();geo.computeBoundingSphere();
+   if(p.positions.length){const geo=new THREE.BufferGeometry();geo.setAttribute("position",new THREE.BufferAttribute(p.positions,3));geo.setAttribute("color",new THREE.BufferAttribute(linearColors(p.colors),3));geo.computeVertexNormals();geo.computeBoundingSphere();
     const mesh=new THREE.Mesh(geo,p.layer==="buildings"?mats.buildings:mats.airports);mesh.castShadow=p.layer==="buildings";mesh.receiveShadow=true;g.add(mesh)}
    if(p.lights?.length){const n=p.lights.length/3,inst=new THREE.InstancedMesh(mats.lightGeo,mats.light,n);for(let i=0;i<n;i++)inst.setMatrixAt(i,m4.makeTranslation(p.lights[i*3]!,p.lights[i*3+1]!,p.lights[i*3+2]!));inst.computeBoundingSphere();g.add(inst)}
    group.add(g);objs.set(p.key,g);if(p.layer==="buildings"){g.updateMatrixWorld(true);probe.add(g)}};

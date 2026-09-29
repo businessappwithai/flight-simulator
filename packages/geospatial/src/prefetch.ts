@@ -71,12 +71,16 @@ export function planTiles(input: PlanInput): TileRequest[] {
   const rings = lodRings(state, policy), allowed = new Set(input.layers ?? rings.flatMap(r => r.layers));
   const wanted = new Map<string, TileRequest>(), p = input.position, track = input.velocity.trackDeg;
   const moving = input.velocity.groundSpeedMps > 1;
-  const add = (tile: TileId, level: DetailLevel, layers: readonly WorldLayer[], priority: number) => {
+  const fixedZoom = policy.layerZoom ?? {};
+  const add = (tile: TileId, level: DetailLevel, layers: readonly WorldLayer[], priority: number, uncapped = false) => {
     const distanceM = distanceToTile(p, tile);
     for (const layer of layers) {
       if (!allowed.has(layer)) continue;
+      // Single-zoom layers are only ever requested at their own zoom (below).
+      const z = fixedZoom[layer];
+      if (z !== undefined && tile.z !== z) continue;
       const cap = policy.layerMaxDistanceM?.[layer];
-      if (cap !== undefined && priority < PRIORITY.CURRENT && distanceM > cap) continue;
+      if (!uncapped && cap !== undefined && priority < PRIORITY.CURRENT && distanceM > cap) continue;
       const key = `${layer}:${tileKey(tile)}`, old = wanted.get(key);
       if (!old || old.priority < priority) wanted.set(key, { key, layer, tile, level, priority, reason: reasonFor(priority), distanceM });
     }
@@ -97,14 +101,34 @@ export function planTiles(input: PlanInput): TileRequest[] {
     for (const tile of tileNeighbourhood(pt.position.lon, pt.position.lat, inner.zoom)) add(tile, inner.level, inner.layers, PRIORITY[reason]);
   }
 
+  // Single-zoom layers (vector features): their own zoom, around the aircraft and ahead of it, while the altitude
+  // policy keeps them in some ring.
+  for (const [layer, z] of Object.entries(fixedZoom) as [WorldLayer, number][]) {
+    const ring = rings.find(r => r.layers.includes(layer));
+    if (!ring || !allowed.has(layer)) continue;
+    const reach = Math.min(policy.layerMaxDistanceM?.[layer] ?? ring.outerM, rings[rings.length - 1]!.outerM);
+    for (const tile of tilesInRadius(p, reach, z)) {
+      const behind = moving && distanceToTile(p, tile) > 0 && Math.abs(angleDiff(track, initialBearing(p, tileCenter(tile)))) > 100;
+      add(tile, ring.level, [layer], behind ? PRIORITY.BEHIND : PRIORITY.IN_RANGE);
+    }
+    add(lonLatToTile(p.lon, p.lat, z), ring.level, [layer], PRIORITY.CURRENT);
+    for (const pt of predictPath(p, input.velocity, input.route, input.horizonsS)) {
+      const reason = HORIZON_PRIORITY[pt.tSeconds] ?? "AHEAD_120S";
+      for (const tile of tileNeighbourhood(pt.position.lon, pt.position.lat, z)) add(tile, ring.level, [layer], PRIORITY[reason]);
+    }
+  }
+
   if (input.route) {
     // Route corridor at the level the route crosses, and the destination at arrival detail.
     for (const q of input.route.remainingPath(p, rings[rings.length - 1]!.outerM)) {
       const d = haversineDistance(p, q), ring = rings.find(r => d <= r.outerM) ?? rings[rings.length - 1]!;
       add(lonLatToTile(q.lon, q.lat, ring.zoom), ring.level, ring.layers, PRIORITY.ROUTE);
     }
-    const dest = input.route.destination, dRing = rings.find(r => haversineDistance(p, dest) <= r.outerM) ?? rings[rings.length - 1]!;
-    add(lonLatToTile(dest.lon, dest.lat, dRing.zoom), dRing.level, dRing.layers.includes("airports") ? ["terrain", "airports"] : ["terrain"], PRIORITY.DESTINATION);
+    const dest = input.route.destination, dDist = haversineDistance(p, dest), dRing = rings.find(r => dDist <= r.outerM) ?? rings[rings.length - 1]!;
+    add(lonLatToTile(dest.lon, dest.lat, dRing.zoom), dRing.level, ["terrain"], PRIORITY.DESTINATION);
+    // The destination's runways and aprons, in full detail, from 30 km out (the whole approach).
+    const az = fixedZoom.airports;
+    if (az !== undefined && dDist < 30_000) for (const tile of tilesInRadius(dest, 2500, az)) add(tile, dRing.level, ["airports"], PRIORITY.DESTINATION, true);
   }
 
   return [...wanted.values()].sort(compareRequests);
