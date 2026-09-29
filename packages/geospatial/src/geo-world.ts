@@ -501,13 +501,32 @@ export class GeoWorld {
         colors.set(colour(alt, water), (j * n + i) * 3);
       }
     }
-    const c = verts[Math.floor(n / 2) * n + Math.floor(n / 2)]!, positions = new Float32Array(n * n * 3);
+    // Skirts: each edge is repeated once at the surface and once `skirt` metres lower, joined by a vertical strip facing
+    // outwards. Neighbouring tiles (another zoom, or the same one rounded differently in float32) never meet exactly, and
+    // without skirts the sky shows through as dotted white lines along tile edges. The surface copy keeps the strip out
+    // of the top surface's vertex normals.
+    const skirt = 30 + 2 * levelDrop(t.tile.z), edges = [[...Array(n).keys()].map(i => i), [...Array(n).keys()].map(j => j * n + seg), [...Array(n).keys()].map(i => seg * n + seg - i), [...Array(n).keys()].map(j => (seg - j) * n)];
+    const skirtColors: number[] = [], skirtTris: number[] = [];
+    const mid = verts[Math.floor(n / 2) * n + Math.floor(n / 2)]!;
+    for (const edge of edges) for (let s = 0; s < seg; s++) {
+      const p = edge[s]!, q = edge[s + 1]!, base = verts.length;
+      verts.push(verts[p]!, verts[q]!, [verts[p]![0], verts[p]![1] - skirt, verts[p]![2]], [verts[q]![0], verts[q]![1] - skirt, verts[q]![2]]);
+      for (const v of [p, q, p, q]) skirtColors.push(colors[v * 3]!, colors[v * 3 + 1]!, colors[v * 3 + 2]!);
+      // Wind the strip so its face points away from the tile's middle (three.js's mirrored x makes this easiest to test).
+      const [P, Q] = [verts[p]!, verts[q]!], ex = Q[0] - P[0], ez = Q[2] - P[2], ox = (P[0] + Q[0]) / 2 - mid[0], oz = (P[2] + Q[2]) / 2 - mid[2];
+      // Normal of (P, P↓, Q) is (P↓−P)×(Q−P) = (0,−1,0)×(ex,·,ez) = (−ez, 0, ex).
+      skirtTris.push(...(-ez * ox + ex * oz >= 0 ? [base, base + 2, base + 1, base + 1, base + 2, base + 3] : [base, base + 1, base + 2, base + 1, base + 3, base + 2]));
+    }
+    const c = mid, positions = new Float32Array(verts.length * 3);
     verts.forEach((v, i) => positions.set([v[0] - c[0], v[1] - c[1], v[2] - c[2]], i * 3));
-    const indices = new Uint16Array(seg * seg * 6);
+    const allColors = new Uint8Array(verts.length * 3);
+    allColors.set(colors); allColors.set(skirtColors, colors.length);
+    const indices = new Uint16Array(seg * seg * 6 + skirtTris.length);
     let k = 0;
     // three.js x is mirrored, so the winding is flipped to keep faces pointing up.
     for (let j = 0; j < seg; j++) for (let i = 0; i < seg; i++) { const a = j * n + i, b = a + 1, d = a + n, e = d + 1; indices.set([a, d, b, b, d, e], k); k += 6; }
-    return { key: tileKey(t.tile), z: t.tile.z, center: c, positions, colors, indices };
+    indices.set(skirtTris, k);
+    return { key: tileKey(t.tile), z: t.tile.z, center: c, positions, colors: allColors, indices };
   }
 
   // ---- Cross-country: route autopilot target, re-anchoring, arrival
