@@ -239,7 +239,9 @@ export class GeoWorld {
       } catch (e) {
         if (this.#disposed) return;
         if (attempt + 1 >= retries) {
-          if (this.state === "LOADING") throw e;
+          // Before READY a failure means real terrain is unavailable (prepare reports it); tiles still retrying after
+          // that must not overwrite the explanation or add sea-level tiles to a world that is already flat.
+          if (this.state !== "READY") throw e;
           // Keep flying: record the tile as sea level. The manifest hash shows it differs from the real tile.
           this.#sim.add(extractSimulationTile(t, () => 0));
           this.detail = `Terrain tile ${tileKey(t)} unavailable; treated as sea level.`;
