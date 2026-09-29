@@ -151,7 +151,7 @@ export class DeterministicSimulation {
       grounded = true;
       // On real terrain (anything but the flat y = 0 airfield, whose behaviour and checksums stay as they were) the
       // wheels follow the surface: no sink rate is carried into the next tick, so a sloping runway can be rolled to a stop.
-      if (this.#ground && ground !== 0 && velocity.y < 0) velocity = { ...velocity, y: 0 };
+      if (!crashed && this.#ground && ground !== 0 && velocity.y < 0) velocity = { ...velocity, y: 0 };
     }
 
     this.#entities = this.#entities.map(e => e.kind !== "OBSTACLE" ? e : ({

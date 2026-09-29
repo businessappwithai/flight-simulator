@@ -6,7 +6,7 @@ import {FlightTraceRecorder,LearningRecorder,emptyBook,parseBook,situationOf} fr
 import {Copilot} from "@flight/copilot";
 import {observationFeatures} from "@flight/cognition";
 import {XGBoostBestPracticeClient} from "@flight/experience/xgboost-client";
-import {AirportIndex,DEFAULT_FEATURES_URL,GeoWorld,SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV,decodeCatalog,parseOurAirports,searchAirports,terrariumSource,vectorSources,type AirportCatalogJson} from "@flight/geospatial";
+import {AirportIndex,DEFAULT_FEATURES_URL,GeoWorld,SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV,cacheApiStore,cachingFetch,decodeCatalog,parseOurAirports,searchAirports,terrariumSource,vectorSources,type AirportCatalogJson} from "@flight/geospatial";
 // Authoritative flight simulation off the render thread. The page only sends pilot commands and STEP requests.
 const MAX_TICKS_PER_STEP=240,LEARN_EVERY_TICKS=30n;
 const sim=new DeterministicSimulation(),controller=new IntentController(),sensors=new PerfectSensorSuite(),learner=new LearningRecorder(),tracer=new FlightTraceRecorder();
@@ -41,20 +41,29 @@ const catalog=(async()=>{
  emit({type:"GEO_CATALOG",airports:featured(),total:airports.size});
 })();
 let geo:GeoWorld|undefined,geoEpoch=0;
+// Tiles are kept in the browser's Cache API as they arrive (and ahead of time with PACK_ROUTE), so a flown or packed
+// route also works offline. Without the Cache API (Bun tests, insecure origins) tiles come from the network only.
+const tileStore=cacheApiStore(),tileFetch=tileStore?cachingFetch(tileStore):fetch;
+const tilesCached=async()=>tileStore?await tileStore.count().catch(()=>null):null;
+// GeoTelemetry samples go into the flight trace every 10 s of flight (and at each re-anchoring).
+const STREAM_EVERY_TICKS=1200n;let lastStreamSample=-1n,lastStreamEpoch=0;
 const pose=()=>({position:world.aircraft.position,velocity:world.aircraft.velocity,heading:world.aircraft.heading});
 function setWorld(airport:string|null,runway?:string,terrainUrl?:string,featuresUrl:string|null=DEFAULT_FEATURES_URL,destination?:string,destinationRunway?:string){
- geo?.dispose();geo=undefined;sim.setGround(undefined);const epoch=++geoEpoch;
- emit({type:"TERRAIN",epoch,add:[],remove:[],clear:true});emit({type:"FEATURES",epoch,add:[],remove:[],clear:true});
+ // Build the new world first: an unknown runway or destination throws here and leaves the current world as it was.
+ let g:GeoWorld|undefined;
  if(airport!==null){
-  const g=new GeoWorld({airports,airport,runway,destination,destinationRunway,terrain:terrariumSource(terrainUrl?{template:terrainUrl}:{}),
-   ...(featuresUrl?{features:vectorSources({url:featuresUrl})}:{}),
-   onPatches:(add,remove)=>{if(geo===g)emit({type:"TERRAIN",epoch:geoEpoch,add,remove},add.flatMap(p=>[p.positions.buffer,p.colors.buffer,p.indices.buffer]))},
-   onFeatures:(add,remove)=>{if(geo===g)emit({type:"FEATURES",epoch:geoEpoch,add,remove},add.flatMap(p=>[p.positions.buffer,p.colors.buffer,...(p.lights?[p.lights.buffer]:[])]))},
+  const w:GeoWorld=new GeoWorld({airports,airport,runway,destination,destinationRunway,terrain:terrariumSource({fetch:tileFetch,...(terrainUrl?{template:terrainUrl}:{})}),
+   ...(featuresUrl?{features:vectorSources({url:featuresUrl,fetch:tileFetch})}:{}),
+   onPatches:(add,remove)=>{if(geo===w)emit({type:"TERRAIN",epoch:geoEpoch,add,remove},add.flatMap(p=>[p.positions.buffer,p.colors.buffer,p.indices.buffer]))},
+   onFeatures:(add,remove)=>{if(geo===w)emit({type:"FEATURES",epoch:geoEpoch,add,remove},add.flatMap(p=>[p.positions.buffer,p.colors.buffer,...(p.lights?[p.lights.buffer]:[])]))},
    // Re-anchoring moved the local frame: meshes of the old frame are dropped and re-sent in the new one.
-   onRebase:frame=>{if(geo===g){const e=++geoEpoch;emit({type:"TERRAIN",epoch:e,add:[],remove:[],clear:true});emit({type:"FEATURES",epoch:e,add:[],remove:[],clear:true});void frame}},
-   onChange:()=>{if(geo===g){if(g.state==="ERROR")sim.setGround(undefined);else g.update(pose());publish()}}});
-  geo=g;sim.setGround(g.ground,g.landable);void g.prepare();
+   onRebase:()=>{if(geo===w){const e=++geoEpoch;emit({type:"TERRAIN",epoch:e,add:[],remove:[],clear:true});emit({type:"FEATURES",epoch:e,add:[],remove:[],clear:true})}},
+   onChange:()=>{if(geo===w){if(w.state==="ERROR")sim.setGround(undefined);else w.update(pose());publish()}}});
+  g=w;
  }
+ geo?.dispose();geo=g;const epoch=++geoEpoch;
+ emit({type:"TERRAIN",epoch,add:[],remove:[],clear:true});emit({type:"FEATURES",epoch,add:[],remove:[],clear:true});
+ sim.setGround(g?.ground,g?.landable);void g?.prepare();
  world=sim.reset(scenario);controls={aileron:0,elevator:0,rudder:0,throttle:0};
 }
 const INTENTS=new Set<PilotIntent>(["HOLD","TURN_LEFT","TURN_RIGHT","CLIMB","DESCEND","SLOW","REROUTE","ABORT"]);
@@ -124,6 +133,7 @@ async function handle(data:SimCommand){
      }
     }
     geo?.update(pose());
+    if(geo&&geo.state!=="LOADING"){const bucket=world.tick/STREAM_EVERY_TICKS;if(bucket!==lastStreamSample||geo.frameEpoch!==lastStreamEpoch){lastStreamSample=bucket;lastStreamEpoch=geo.frameEpoch;tracer.stream(world.tick,geo.streamSample(pose()))}}
     const finishing=done()&&!ended;if(finishing)ended=true;
     const landed=world.objective.phase==="COMPLETE";
     if(!done()&&!paused&&ticks>0)copilot.advise(world.tick,sensors.observe(world),flownIntent(),takeAdvice);
@@ -138,6 +148,15 @@ async function handle(data:SimCommand){
     await catalog;const near=geo?geo.status(pose()).position:undefined;
     emit({type:"AIRPORTS_FOUND",query:data.query,airports:searchAirports(airports.airports,data.query,Math.max(1,Math.min(50,Math.floor(Number(data.limit)||20))),near)});return;
    }
+   case "PACK_ROUTE":{
+    const g=geo;if(!g?.route||g.state!=="READY")throw new Error("pack a route once the destination is set and the world is ready");
+    // Runs alongside the flight (commands keep flowing); progress arrives as ROUTE_PACK events.
+    void (async()=>{let last=0;const r=await g.packRoute(p=>{const now=Date.now();if(now-last>250||p.done===p.total){last=now;emit({type:"ROUTE_PACK",state:"RUNNING",...p,cached:null})}});
+     emit({type:"ROUTE_PACK",state:r.failed?"ERROR":"DONE",...r,cached:await tilesCached(),...(r.failed?{detail:`${r.failed} of ${r.total} tiles could not be fetched`}:{}),...(tileStore?{}:{detail:"This browser keeps no tile cache here (needs HTTPS or localhost); the tiles were fetched but will not survive a reload."})})})()
+     .catch(e=>emit({type:"ROUTE_PACK",state:"ERROR",done:0,total:0,failed:0,cached:null,detail:e instanceof Error?e.message:String(e)}));
+    return;
+   }
+   case "CLEAR_TILE_CACHE":await tileStore?.clear();emit({type:"ROUTE_PACK",state:"CLEARED",done:0,total:0,failed:0,cached:await tilesCached()});return;
    case "SET_WORLD":{
     await catalog;
     if(data.airport!==null&&(typeof data.airport!=="string"||!airports.find(data.airport)))throw new Error(`unknown airport ${String(data.airport)}`);
@@ -151,7 +170,7 @@ async function handle(data:SimCommand){
    case "RESTORE":throw new Error("RESTORE is not supported by the simulator worker");
    default:throw new Error(`unknown command ${JSON.stringify((data as any)?.type)}`);
   }
- }catch(e){emit({type:"ERROR",message:e instanceof Error?e.message:String(e)})}
+ }catch(e){emit({type:"ERROR",message:e instanceof Error?e.message:String(e),...(typeof data?.type==="string"?{command:data.type}:{})})}
 };
 beginFlight();
 emit({type:"GEO_CATALOG",airports:featured(),total:airports.size});

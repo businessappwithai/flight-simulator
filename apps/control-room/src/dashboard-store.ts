@@ -1,5 +1,5 @@
 import type {RuntimeEvent} from "@flight/protocol";
-import {LiveDashboardModel,type DashboardMetrics,type DecisionWhy} from "./live-dashboard.ts";
+import {LiveDashboardModel,type DashboardMetrics,type DecisionWhy,type WorldStreamView} from "./live-dashboard.ts";
 import {TelemetryBuffer} from "./telemetry-buffer.ts";
 import {ReplayController,type ReplayState} from "./replay-controller.ts";
 import {dashboardAlerts,type DashboardAlert} from "./alerts.ts";
@@ -9,6 +9,7 @@ import {watchdog,type WatchdogFinding} from "./watchdog.ts";
  * useSyncExternalStore; bursts of events are coalesced into one render per animation frame.
  */
 export interface DashboardView{metrics:DashboardMetrics;decisions:readonly DecisionWhy[];selected?:DecisionWhy;reasons:readonly string[];alerts:readonly DashboardAlert[];findings:readonly WatchdogFinding[];
+ stream?:WorldStreamView;
  mode:"LIVE"|"REPLAY";replay:ReplayState;replayPosition:{index:number;total:number};pinned?:string;paused:boolean;telemetrySize:number;version:number}
 export class DashboardStore{
  #model=new LiveDashboardModel();readonly telemetry=new TelemetryBuffer();
@@ -22,7 +23,7 @@ export class DashboardStore{
   typeof requestAnimationFrame==="function"?requestAnimationFrame(run):queueMicrotask(run)}
  #compute(version:number):DashboardView{
   const m=this.#model,metrics=m.metrics(),decisions=m.decisions(),selected=this.#pinned?m.decisions(5000).find(x=>x.decisionId===this.#pinned):m.latest();
-  return {metrics,decisions,selected,reasons:selected?m.explain(selected.decisionId)??[]:[],alerts:dashboardAlerts(metrics,selected),findings:watchdog(metrics,m.decisions(25)),
+  return {metrics,decisions,selected,stream:m.worldStream(),reasons:selected?m.explain(selected.decisionId)??[]:[],alerts:dashboardAlerts(metrics,selected),findings:watchdog(metrics,m.decisions(25)),
    mode:this.#mode,replay:this.replay.state,replayPosition:this.replay.position,pinned:this.#pinned,paused:this.#paused,telemetrySize:this.telemetry.size,version};
  }
  ingest(e:RuntimeEvent){this.telemetry.push(e);this.#model.ingest(e);this.#changed()}

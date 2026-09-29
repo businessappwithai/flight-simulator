@@ -3,20 +3,32 @@ import {Canvas} from "@react-three/fiber";
 import * as THREE from "three";
 import type {EntityState,PilotIntent,SimPilot} from "@flight/protocol";
 import {RATES,type SimStore,type ScenarioKind} from "./sim-store.ts";
-import {Aircraft,CameraController,Entities,GeoAirports,GeoFeatures,GeoTerrain,QualityGovernor,Scenery,SimulationDriver,Trail,ViewDistance} from "./scene.tsx";
+import {Aircraft,CameraController,Entities,GeoAirports,GeoFeatures,GeoRoute,GeoTerrain,QualityGovernor,Scenery,SimulationDriver,Tiles3D,Trail,ViewDistance} from "./scene.tsx";
+import {TerrainProbe} from "./terrain-probe.ts";
 import {createAircraft} from "./aircraft-model.ts";
 import {CAMERA_MODES,type CameraMode} from "./cameras.ts";
 import type {Scenery as SceneryHandle} from "./scenery.ts";
 import {AiPanel,Attribution,Banner,ErrorBox,GeoBadge,Help,Instruments,MovingMap,Readout,StartPanel,TopBar,TouchPad,useHud,LEARNING_LAB_URL} from "./hud.tsx";
 // URL options (also used by automated QA): ?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0
 // Real world: &airport=VOMM&runway=07 (and &terrain=<Terrarium URL template with {z}/{x}/{y}> to use another tile server).
-export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string;featuresUrl?:string}
+// Cross-country: &to=VOBL (&toRunway=09L): the autopilot flies there and lands.
+// 3D Tiles over the real world: &tiles3d=<tileset.json URL>, or &tiles3dKey=<Google Maps API key> for Photorealistic 3D Tiles
+// (&tiles3dOffset=<m> lifts them, e.g. for the geoid height).
+export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string;featuresUrl?:string;destination?:string;destinationRunway?:string;tiles3d?:{url?:string;googleKey?:string;offsetM:number}}
 export function parseOptions(search:string):AppOptions{
  const p=new URLSearchParams(search),seed=p.get("seed"),cam=(p.get("camera")??"").toUpperCase() as CameraMode,rate=Number(p.get("rate"));
  return {seed:seed&&/^\d{1,19}$/.test(seed)?BigInt(seed):1n,scenario:p.get("scenario")==="seeded"?"seeded":"default",pilot:p.get("pilot")?.toUpperCase()==="MANUAL"?"MANUAL":"AUTOPILOT",
   rate:(RATES as readonly number[]).includes(rate)?rate:1,camera:CAMERA_MODES.includes(cam)?cam:"CHASE",quality:p.get("quality")==="low"?"low":"high",hud:p.get("hud")!=="0",
   ...(/^[A-Za-z0-9-]{2,8}$/.test(p.get("airport")??"")?{airport:p.get("airport")!.toUpperCase()}:{}),...(/^[0-9]{1,2}[LRCT]?$/i.test(p.get("runway")??"")?{runway:p.get("runway")!.toUpperCase()}:{}),
-  ...(p.get("terrain")?{terrainUrl:p.get("terrain")!}:{}),...(p.get("features")?{featuresUrl:p.get("features")!}:{})};
+  ...(p.get("terrain")?{terrainUrl:p.get("terrain")!}:{}),...(p.get("features")?{featuresUrl:p.get("features")!}:{}),
+  ...(/^[A-Za-z0-9-]{2,8}$/.test(p.get("to")??"")?{destination:p.get("to")!.toUpperCase()}:{}),...(/^[0-9]{1,2}[LRCT]?$/i.test(p.get("toRunway")??"")?{destinationRunway:p.get("toRunway")!.toUpperCase()}:{}),
+  ...tiles3dOption(p)};
+}
+function tiles3dOption(p:URLSearchParams):{tiles3d?:AppOptions["tiles3d"]}{
+ const url=p.get("tiles3d")??"",key=p.get("tiles3dKey")??"",offsetM=Number(p.get("tiles3dOffset"))||0;
+ if(key&&/^[\w-]{10,200}$/.test(key))return {tiles3d:{googleKey:key,offsetM}};
+ if(url&&/^(https?:\/\/|\/|\.)/.test(url))return {tiles3d:{url,offsetM}};
+ return {};
 }
 const KEYMAP:Record<string,PilotIntent>={KeyW:"CLIMB",ArrowUp:"CLIMB",KeyS:"DESCEND",ArrowDown:"DESCEND",ArrowLeft:"TURN_LEFT",KeyQ:"TURN_LEFT",ArrowRight:"TURN_RIGHT",KeyE:"TURN_RIGHT",ShiftLeft:"SLOW",ShiftRight:"SLOW",KeyX:"ABORT"};
 class RenderBoundary extends Component<{children:ReactNode;onError:(m:string)=>void},{failed:boolean}>{
@@ -26,7 +38,7 @@ class RenderBoundary extends Component<{children:ReactNode;onError:(m:string)=>v
 }
 /** `store` is created outside React (main.tsx) so StrictMode's double mount cannot tear down the worker. */
 export function App({options,store}:{options:AppOptions;store:SimStore}){
- const hud=useHud(store),model=useMemo(createAircraft,[]),scenery=useRef<SceneryHandle|null>(null);
+ const hud=useHud(store),model=useMemo(createAircraft,[]),scenery=useRef<SceneryHandle|null>(null),probe=useMemo(()=>new TerrainProbe(),[]);
  const [camera,setCamera]=useState<CameraMode>(options.camera),[panel,setPanel]=useState(true),[help,setHelp]=useState(false);
  // Open on arrival when there is no Jev key yet, so the key box is the first thing offered.
  const [ai,setAi]=useState(()=>!store.jevKey);
@@ -37,7 +49,7 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
  const entities=useMemo<readonly EntityState[]>(()=>hud.world?.entities??[],[entityKey]); // eslint-disable-line react-hooks/exhaustive-deps
  // Keep the URL shareable: it always reproduces the scenario on screen.
  useEffect(()=>{const u=new URL(location.href);u.searchParams.set("seed",String(store.seed));u.searchParams.set("scenario",store.scenario);
-  for(const [k,v] of [["airport",hud.airport],["runway",hud.runway]] as const)v?u.searchParams.set(k,v):u.searchParams.delete(k);history.replaceState(null,"",u)},[store,hud.scenarioId,hud.airport,hud.runway]);
+  for(const [k,v] of [["airport",hud.airport],["runway",hud.runway],["to",hud.destination],["toRunway",hud.destinationRunway]] as const)v?u.searchParams.set(k,v):u.searchParams.delete(k);history.replaceState(null,"",u)},[store,hud.scenarioId,hud.airport,hud.runway,hud.destination,hud.destinationRunway]);
  useEffect(()=>{
   const held:PilotIntent[]=[];const sync=()=>store.setIntent(held.at(-1)??"HOLD");
   // Typing in a field (the Jev key box) must not fly the aircraft or trigger shortcuts.
@@ -65,15 +77,17 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
     onCreated={({gl})=>{gl.toneMapping=THREE.ACESFilmicToneMapping;gl.toneMappingExposure=.62;gl.shadowMap.type=THREE.PCFSoftShadowMap;
      gl.domElement.addEventListener("webglcontextlost",e=>{e.preventDefault();store.showError("The graphics context was lost (GPU reset). Reload the page to continue.",true)})}}>
     <SimulationDriver store={store}/>
-    <Scenery onReady={onScenery} geo={!!hud.airport}/>
+    <Scenery onReady={onScenery} geo={!!hud.airport} store={store} probe={probe}/>
     <ViewDistance geo={!!hud.airport}/>
-    <GeoTerrain store={store}/>
-    <GeoFeatures store={store}/>
-    {hud.geo&&<GeoAirports airports={hud.geo.airports} home={hud.geo.airport}/>}
+    <GeoTerrain store={store} probe={probe}/>
+    <GeoFeatures store={store} probe={probe}/>
+    {hud.geo&&<GeoAirports airports={hud.geo.airports} home={hud.geo.airport} destination={hud.geo.route?.destination}/>}
+    {hud.geo?.route&&<GeoRoute path={hud.geo.route.path}/>}
+    {hud.airport&&options.tiles3d&&<Tiles3D store={store} url={options.tiles3d.url} googleKey={options.tiles3d.googleKey} offsetM={options.tiles3d.offsetM}/>}
     <Aircraft store={store} model={model}/>
     <Entities store={store} entities={entities}/>
     <Trail store={store} model={model}/>
-    <CameraController mode={camera} model={model} scenery={scenery}/>
+    <CameraController mode={camera} model={model} scenery={scenery} probe={hud.airport?probe:undefined}/>
     <QualityGovernor store={store} quality={options.quality}/>
    </Canvas>
   </RenderBoundary>

@@ -21,3 +21,4 @@ export * from "./pmtiles.ts";
 export * from "./vector.ts";
 export * from "./features-world.ts";
 export * from "./catalog.ts";
+export * from "./offline.ts";

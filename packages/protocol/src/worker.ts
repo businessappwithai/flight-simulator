@@ -60,6 +60,8 @@ export interface GeoStatus{airport:string;name:string;runway:string;headingDeg:n
  surveyed:boolean;
  /** Ref of the real runway under the aircraft (e.g. "09L/27R"), or null. */
  runwayBelow:string|null;
+ /** What is directly under the aircraft (names the cause when a flight ends in a crash). */
+ surface:"AIRFIELD"|"RUNWAY"|"BUILDING"|"TERRAIN";
  /**
   * Changes each time the local frame is re-anchored under the aircraft (every ~25 km, so long flights keep small,
   * precise coordinates and a level local "up"); the page redraws terrain and moves the home airfield then.
@@ -67,6 +69,8 @@ export interface GeoStatus{airport:string;name:string;runway:string;headingDeg:n
  frameEpoch:number;
  /** Where the procedural home airfield now sits in local three.js coordinates (identity until the first re-anchoring). */
  home:{position:Vec3Tuple;rotationY:number};
+ /** The current local frame: its origin (WGS84), the true heading of local +z, and ECEF → three.js (column-major 4×4) for ECEF data such as 3D Tiles. */
+ frame:{lat:number;lon:number;altMsl:number;headingDeg:number;ecefToThree:number[]};
  /** Flight to another airport, when a destination is set. */
  route?:GeoRouteStatus;
  /** Ident of the destination airport once the aircraft has landed and slowed there. */
@@ -103,6 +107,10 @@ export type SimCommand=
  | {type:"RESTORE";snapshot:unknown}
  /** Airport search (ICAO / IATA / name / city) over the loaded catalogue. */
  | {type:"FIND_AIRPORTS";query:string;limit?:number}
+ /** Offline route pack: fetch (and keep in the browser's tile cache) every tile the planned route needs. */
+ | {type:"PACK_ROUTE"}
+ /** Forget every tile kept for offline use. */
+ | {type:"CLEAR_TILE_CACHE"}
  /** Anchor the flight to a real airport and runway (null: the procedural airfield). `terrainUrl` overrides the Terrarium tile URL template. */
  | {type:"SET_WORLD";airport:string|null;runway?:string;terrainUrl?:string;
   /** Destination airport (and runway) for a cross-country flight: the autopilot then flies the route and lands there. */
@@ -123,5 +131,8 @@ export type SimEvent=
  | {type:"GEO_CATALOG";airports:GeoCatalogAirport[];total?:number}
  /** Search results for FIND_AIRPORTS. */
  | {type:"AIRPORTS_FOUND";query:string;airports:GeoCatalogAirport[]}
- | {type:"ERROR";message:string};
+ /** Route pack progress; `cached` is how many tile responses the browser keeps for offline use (null: no Cache API). */
+ | {type:"ROUTE_PACK";state:"RUNNING"|"DONE"|"ERROR"|"CLEARED";done:number;total:number;failed:number;cached:number|null;detail?:string}
+ /** A rejected command (`command` names it, e.g. SET_WORLD for an unknown airport) or a runtime failure. */
+ | {type:"ERROR";message:string;command?:string};
 export type InspectorCommand={type:"SEEK";tick:string}|{type:"PLAY"}|{type:"PAUSE"};

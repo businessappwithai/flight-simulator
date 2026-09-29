@@ -11,7 +11,7 @@
  *    `TerrainPatch` meshes in the renderer's frame (float32 vertices relative to a per-tile double-precision centre,
  *    which is the floating origin: three.js composes the offset in doubles, so vertices stay precise anywhere).
  */
-import type { AircraftState, EntityState, FeaturePatch, GeoAirportMarker, GeoRouteStatus, GeoStatus, TerrainPatch, Vec3Tuple, WorldSnapshot } from "@flight/protocol";
+import type { AircraftState, EntityState, FeaturePatch, GeoAirportMarker, GeoRouteStatus, GeoStatus, TerrainPatch, Vec3Tuple, WorldSnapshot, WorldStreamSample } from "@flight/protocol";
 import { type Airport, type AirportIndex, type RunwayGeometry, airportDetail, runwayGeometry } from "./airports.ts";
 import { AnchorFrame, type RunwayAnchor, type SimVector, airfieldBlend, runwayAnchor, surveyedRunwayAnchor } from "./anchor.ts";
 import { attributionFor } from "./attribution.ts";
@@ -19,6 +19,7 @@ import { type MeshContext, aerowaysMesh, buildingsMesh } from "./feature-mesh.ts
 import { FEATURE_ZOOM, FeatureWorld, featureTile } from "./features-world.ts";
 import { type GeoPosition, crossTrackDistance, destinationPoint, haversineDistance, initialBearing, normalizeBearing } from "./geodesy.ts";
 import { GreatCircleRoute } from "./route.ts";
+import { routePackTiles } from "./offline.ts";
 import { SIM_ZOOM, SimulationWorld, extractSimulationTile } from "./sim-world.ts";
 import { type TileSource, WorldStreamer } from "./streamer.ts";
 import type { TerrainTile } from "./terrain.ts";
@@ -98,8 +99,17 @@ export class GeoWorld {
   readonly #featureLoads = new Map<string, Promise<void>>();
   readonly #drawnFeatures = new Set<string>();
   detail: string | undefined;
-  /** Set by the worker while it holds the clock for terrain. */
-  holding = false;
+  /** Set by the worker while it holds the clock for terrain (counted, and timed, for telemetry). */
+  get holding() { return this.#holding; }
+  set holding(v: boolean) {
+    if (v && !this.#holding) { this.#holds++; this.#holdSince = performance.now(); }
+    if (!v && this.#holding && this.#holdSince !== undefined) { this.#holdMs += performance.now() - this.#holdSince; this.#holdSince = undefined; }
+    this.#holding = v;
+  }
+  #holding = false;
+  #holds = 0;
+  #holdMs = 0;
+  #holdSince: number | undefined;
   #frame: AnchorFrame;
   #elevation: number;
   readonly #sim = new SimulationWorld();
@@ -578,6 +588,8 @@ export class GeoWorld {
     this.#schedulePatches();
   }
   get frameEpoch() { return this.#epoch; }
+  #matrix: { frame: AnchorFrame; m: number[] } | undefined;
+  #frameMatrix() { if (this.#matrix?.frame !== this.#frame) this.#matrix = { frame: this.#frame, m: this.#frame.ecefToThree() }; return this.#matrix.m; }
   /**
    * Highest terrain in a 2 km-wide corridor ahead, as far as the hold rule guarantees tiles are loaded (one z12 tile
    * width, ≤ 8 km), so the route autopilot's altitude is a pure function of the state.
@@ -625,7 +637,9 @@ export class GeoWorld {
       features: { state: this.featuresState, tiles: this.#features.size, buildings: this.#features.buildingCount, ...(this.featuresDetail ? { detail: this.featuresDetail } : {}) },
       surveyed: !this.runway.synthesized,
       runwayBelow: this.state === "READY" && this.#blendAt(p.x, p.z) > 0 ? this.#runwayRef(geo) : null,
+      surface: this.#surface(p, geo),
       frameEpoch: this.#epoch,
+      frame: { lat: this.#frame.anchor.lat, lon: this.#frame.anchor.lon, altMsl: this.#frame.anchor.altMsl, headingDeg: this.#frame.headingDeg, ecefToThree: this.#frameMatrix() },
       home: { position: [-this.#homeLocal.x, this.#homeLocal.y, this.#homeLocal.z], rotationY: -this.#homeLocal.yaw },
       ...(this.#routeStatus(pose, w) ? { route: this.#routeStatus(pose, w)! } : {}),
       ...(this.#arrived(pose, w) ? { arrived: this.destination!.ident } : {}),
@@ -633,6 +647,62 @@ export class GeoWorld {
     };
   }
   get featureWorld() { return this.#features; }
+  /**
+   * Offline route pack: loads every tile the route will need (`routePackTiles`) through the terrain and feature
+   * sources, so a caching fetch behind them stores the lot. Resolves with the counts; never touches the physics world.
+   */
+  async packRoute(onProgress?: (p: { done: number; total: number; failed: number }) => void, concurrency = 6) {
+    const route = this.#route;
+    if (!route) throw new Error("no route to pack (set a destination)");
+    const src = this.options.features, withFeatures = !!src && this.featuresState !== "UNAVAILABLE" && this.featuresState !== "OFF";
+    const { terrain, features } = routePackTiles(route, { features: withFeatures });
+    const jobs: (() => Promise<unknown>)[] = [...terrain.map(t => () => this.options.terrain.load(t, this.#abort.signal)), ...(withFeatures ? features.map(t => () => src!.load(t, this.#abort.signal)) : [])];
+    let next = 0, done = 0, failed = 0;
+    const worker = async () => {
+      while (next < jobs.length && !this.#disposed) {
+        const job = jobs[next++]!;
+        try { await job(); } catch { failed++; }
+        done++;
+        onProgress?.({ done, total: jobs.length, failed });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker));
+    return { done, total: jobs.length, failed };
+  }
+  /**
+   * GeoTelemetry: what the physics has (and is missing) around the aircraft, how the render streamer is doing,
+   * and whether the destination is ready. Observation only (timings are wall-clock); recorded in flight traces.
+   */
+  streamSample(pose: AircraftPose): WorldStreamSample {
+    const g = this.#frame.toGeo(pose.position), s = this.#streamer.stats(), ready = this.state === "READY";
+    const featuresOn = this.featuresState === "READY" || this.featuresState === "LOADING";
+    const missing = ready ? this.#neighbourhood(g).filter(t => !this.#sim.has(t)).length + (featuresOn ? this.#featureNeighbourhood(g).filter(t => !this.#features.has(t)).length : 0) : 0;
+    const d = this.destination, rw = this.destinationRunway;
+    const dest = d && rw ? {
+      ident: d.ident, distanceKm: Math.round(haversineDistance(g, rw.anchor) / 100) / 10,
+      terrainReady: this.#neighbourhood(rw.anchor).every(t => this.#sim.has(t)),
+      featuresReady: featuresOn ? this.#featureNeighbourhood(rw.anchor).every(t => this.#features.has(t)) : null,
+    } : undefined;
+    const holdMs = this.#holdMs + (this.#holding && this.#holdSince !== undefined ? performance.now() - this.#holdSince : 0);
+    return {
+      airport: this.airport.ident, state: this.state, frameEpoch: this.#epoch,
+      position: { lat: Math.round(g.lat * 1e5) / 1e5, lon: Math.round(g.lon * 1e5) / 1e5, altMsl: Math.round(g.altMsl) },
+      physics: { terrainTiles: this.#sim.size, featureTiles: this.#features.size, missingAround: missing, holding: this.#holding, holds: this.#holds, holdMs: Math.round(holdMs), ...(this.#manifest ? { manifest: this.#manifest } : {}) },
+      render: {
+        wanted: s.wanted, queued: s.queued, inFlight: s.inFlight, loaded: s.loaded, failed: s.failed, aborted: s.aborted, evictions: s.cache.evictions,
+        cacheEntries: s.cache.entries, cacheMB: Math.round(s.cache.bytes / 1e5) / 10,
+        hitRate: s.cache.hits + s.cache.misses ? Math.round(s.cache.hits / (s.cache.hits + s.cache.misses) * 1000) / 1000 : null,
+        latencyP50Ms: s.latencyP50Ms === null ? null : Math.round(s.latencyP50Ms), latencyP95Ms: s.latencyP95Ms === null ? null : Math.round(s.latencyP95Ms),
+      },
+      features: this.featuresState,
+      ...(dest ? { destination: dest } : {}),
+    };
+  }
+  #surface(p: SimVector, g: GeoPosition): GeoStatus["surface"] {
+    if (this.state !== "READY" || this.#blendAt(p.x, p.z) === 0) return "AIRFIELD";
+    if (this.#features.buildingTopAt(g.lon, g.lat) > 0) return "BUILDING";
+    return this.landable(p.x, p.z) ? "RUNWAY" : "TERRAIN";
+  }
   #runwayRef(g: GeoPosition): string | null {
     const f = this.#features.runwayAt(g.lon, g.lat);
     if (f) return f.ref ?? "runway";

@@ -38,6 +38,16 @@ export class AnchorFrame {
     const east = e[0] * dx + e[1] * dy, north = n[0] * dx + n[1] * dy + n[2] * dz, up = u[0] * dx + u[1] * dy + u[2] * dz;
     return { x: east * this.#cos - north * this.#sin, y: up, z: east * this.#sin + north * this.#cos };
   }
+  /**
+   * The rigid transform from ECEF (m) to the renderer's local frame (three.js: x = −sim x, y up, z = sim z), as a
+   * column-major 4×4 matrix (THREE.Matrix4.fromArray). Places ECEF data such as 3D Tiles exactly on the local frame.
+   */
+  ecefToThree(): number[] {
+    const e = this.#e, n = this.#n, u = this.#u, o = this.#o, c = this.#cos, s = this.#sin;
+    const rx = [0, 1, 2].map(i => -(c * e[i]! - s * n[i]!)), ry = [0, 1, 2].map(i => u[i]!), rz = [0, 1, 2].map(i => s * e[i]! + c * n[i]!);
+    const t = (r: number[]) => -(r[0]! * o.x + r[1]! * o.y + r[2]! * o.z);
+    return [rx[0]!, ry[0]!, rz[0]!, 0, rx[1]!, ry[1]!, rz[1]!, 0, rx[2]!, ry[2]!, rz[2]!, 0, t(rx), t(ry), t(rz), 1];
+  }
   /** True bearing (deg) of a simulation heading (radians, 0 = along the runway, positive = right). */
   bearing(simHeadingRad: number) { return normalizeBearing(this.headingDeg + simHeadingRad / RAD); }
 }

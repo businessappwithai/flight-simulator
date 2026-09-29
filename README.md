@@ -68,14 +68,22 @@ service the local rule-based provider stands in; an Open-Jev endpoint can be con
 - Every flight starts parked on runway 18 with the clock stopped; **Start**, any flight control, or engaging the
   autopilot begins the take-off roll. Restart and New scenario return to the runway.
 - Pilots: the reference autopilot (takes off, flies the gate, pattern, glide path, lands) or manual intents from the
-  keyboard or an on-screen pad on touch devices. Time acceleration ×0.5–×8, pause, restart, new seeded scenario.
+  keyboard or an on-screen pad on touch devices. Time acceleration ×0.5–×32, pause, restart, new seeded scenario.
 - **Jev & learning** panel: save a Jev key (kept only in this browser's `localStorage`) or remove it. The autopilot
   and learning work only while a key is saved; manual flying always works. While learning is on, the simulation
   worker (`@flight/learning`) credits each (situation, action) pair with the flight's landing or crash, the page
   keeps that book in `localStorage` (`flightWorld.learning.v1`) and shows the best known action for the current
   situation. **Clear learning & restart** forgets it. Learning only observes, so flight checksums are unchanged.
   The key is not sent anywhere yet: bind a Jev transport (see LOCAL_RUN.md) to use it against a real service.
-- URL options: `?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0`. Invalid values
+- **Real world and cross-country flights:** pick **From** an airport on the start card or search any of ~27,000
+  airports (ICAO, IATA, name or city); a search result's **To** sets a destination. The autopilot then takes off,
+  follows the great circle at a terrain-safe altitude, descends on a 3° profile and lands on the destination runway
+  (×16 and ×32 time acceleration for long legs). Real terrain, buildings and runways stream in on the way. See
+  *Flying between two airports* in ARCHITECTURE.md and WORLD_DATA.md for self-hosted data. **Save route for
+  offline** fetches every tile the route needs into the browser's cache first; the Control Room's **World stream**
+  card shows the flight's streaming telemetry; `&tiles3d=<tileset.json>` or `&tiles3dKey=<Google key>` adds 3D Tiles.
+- URL options: `?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0`; real world
+  `&airport=VOMM&runway=07&to=VOBL&toRunway=09L`. Invalid values
   fall back to defaults; `pilot=autopilot` needs a saved Jev key. Adaptive quality drops shadows, then resolution, when the frame rate stays low.
 - Keys: `A` autopilot · `W/S/←/→/Q/E/Shift/X` manual · `C`,`1`–`4` cameras · `P`/Space pause · `+`/`-` rate ·
   `R` restart · `N` new scenario · `I` instruments · `H` help.
