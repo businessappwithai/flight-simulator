@@ -59,14 +59,15 @@ input[aria-invalid=true]{border-color:var(--bad)}
 .ai .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:8px 0;text-align:center}
 .ai .stats dt{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}.ai .stats dd{margin:0;font-weight:650}
 .ai .insight{color:#cfe6ff}.ai>button{width:100%}.ai .traces{margin:4px 0 8px}
-.ai .copilot{border-top:1px solid var(--line);margin-top:6px;padding-top:6px}.ai .copilot p{margin:3px 0}
+.ai .copilot{border-top:1px solid var(--line);margin-top:6px;padding-top:6px}.ai .tiles3d{border-top:1px solid var(--line);margin:6px 0;padding-top:6px}.ai .tiles3d form.row input{flex:1}.ai .tiles3d p{margin:4px 0}.ai .copilot p{margin:3px 0}
 .ai .state{font-size:11px;padding:1px 6px;border-radius:6px;border:1px solid var(--line)}.ai .state.READY{color:var(--ok)}.ai .state.ERROR{color:var(--bad)}
 /* Start card: on the runway before the take-off roll; sits just above the dock. */
 .start{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-b) + var(--dock-h) + var(--gap));width:min(420px,calc(100vw - 30px));padding:14px 16px;text-align:center;font-size:13px}
+.start{max-height:calc(100vh - var(--top-h,58px) - var(--safe-b) - var(--dock-h) - 2 * var(--gap));overflow:auto;overscroll-behavior:contain}
 .start b{font-size:17px}.start p{margin:6px 0}.start-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px}.start-actions button{min-height:38px;font-size:13px}
 .world-picker{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:8px 0 2px}.world-picker label{display:flex;gap:6px;align-items:center;font-size:12px}.world-picker select{max-width:230px;min-height:30px}
 .airport-search{position:relative;flex-basis:100%;display:flex;justify-content:center}.airport-search input{width:min(340px,100%);min-height:30px}
-.airport-search .results{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);width:min(400px,calc(100vw - 30px));max-height:40vh;overflow:auto;margin:0 0 4px;padding:4px;list-style:none;text-align:left;background:rgba(14,20,28,.97);border:1px solid var(--line);border-radius:8px;z-index:5}
+.airport-search{flex-direction:column;align-items:center}.airport-search .results{width:min(400px,100%);max-height:32vh;overflow:auto;margin:4px 0 0;padding:4px;list-style:none;text-align:left;background:rgba(14,20,28,.97);border:1px solid var(--line);border-radius:8px;z-index:5}
 .airport-search .results li{display:flex;gap:6px;align-items:center;padding:3px 4px;font-size:12px}.airport-search .results .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.airport-search .results button{min-height:26px;padding:0 8px;font-size:12px}
 .route-chip{flex-basis:100%;margin:2px 0 0;font-size:12px}.route-chip .close{min-height:22px;padding:0 7px;margin-left:6px}
 .geo .route{color:#ffb8f0}
@@ -78,12 +79,15 @@ input[aria-invalid=true]{border-color:var(--bad)}
 .pad button{height:52px;font-size:18px}
 @media (pointer:coarse){.pad{display:grid}}
 /* Touch phones: the start card and then the yoke sit above the dock; the panel scrolls rather than covering them. */
-@media (pointer:coarse) and (max-width:600px){.ai{max-height:calc(100vh - var(--top-h,58px) - var(--dock-h) - 216px)}}
+/* Phones have no room for both the Jev panel and the airport picker: while the panel is open the picker steps aside. */
+.picker-hint{display:none}
+@media (pointer:coarse) and (max-width:600px){.ai{max-height:calc(100vh - var(--top-h,58px) - var(--dock-h) - var(--start-h,210px) - 4 * var(--gap,10px))}
+ body:has(.ai) .start .world-picker{display:none}body:has(.ai) .start .picker-hint{display:block}}
 /* iPad portrait and small laptops: drop the duplicate text readout, keep instruments + map. */
 @media (max-width:1100px){.readout{display:none}}
 @media (max-width:900px){:root{--map:170px}.chip.opt{display:none}}
 /* Phones */
-@media (max-width:600px){.start .intro{display:none}.world-picker{margin-top:4px}.geo{font-size:11px;gap:6px;white-space:nowrap}.geo .wide{display:none}body:has(.start) .geo{display:none}:root{--map:112px;--dock-h:32vh}.buttons button,.buttons a.btn{padding:5px 8px}.dock{align-items:flex-end}.banner{top:30%;font-size:17px}.pad{grid-template-columns:repeat(3,48px)}.pad button{height:44px}}
+@media (max-width:600px){.start .intro{display:none}.world-picker{margin-top:4px;gap:6px}.world-picker select{max-width:190px}.start .k{margin:3px 0}.geo{font-size:11px;gap:6px;white-space:nowrap}.geo .wide{display:none}body:has(.start) .geo{display:none}:root{--map:112px;--dock-h:32vh}.buttons button,.buttons a.btn{padding:5px 8px}.dock{align-items:flex-end}.banner{top:30%;font-size:17px}.pad{grid-template-columns:repeat(3,48px)}.pad button{height:44px}}
 @media (max-height:500px){:root{--dock-h:44vh;--map:130px}}
 </style>
 </head>

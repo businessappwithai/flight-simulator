@@ -1,5 +1,5 @@
 import type {AircraftControls, WorldSnapshot, PilotIntent} from "./index.ts";
-import type {RuntimeEvent} from "./telemetry.ts";
+import type {RuntimeEvent,WorldStreamSample} from "./telemetry.ts";
 export type SimPilot="AUTOPILOT"|"MANUAL";
 /**
  * How often a situation/intent pair ended in a landing or a crash, and who was flying. Each finished flight
@@ -132,6 +132,8 @@ export type SimEvent=
  /** Search results for FIND_AIRPORTS. */
  | {type:"AIRPORTS_FOUND";query:string;airports:GeoCatalogAirport[]}
  /** Route pack progress; `cached` is how many tile responses the browser keeps for offline use (null: no Cache API). */
+ /** GeoTelemetry sample (also recorded in the flight trace); the page relays it live to an open Control Room. */
+ | {type:"WORLD_STREAM";tick:string;stream:WorldStreamSample}
  | {type:"ROUTE_PACK";state:"RUNNING"|"DONE"|"ERROR"|"CLEARED";done:number;total:number;failed:number;cached:number|null;detail?:string}
  /** A rejected command (`command` names it, e.g. SET_WORLD for an unknown airport) or a runtime failure. */
  | {type:"ERROR";message:string;command?:string};

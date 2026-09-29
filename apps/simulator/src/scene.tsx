@@ -17,11 +17,11 @@ import {GoogleCloudAuthPlugin} from "3d-tiles-renderer/plugins";
 export function SimulationDriver({store}:{store:SimStore}){
  useFrame((_,delta)=>store.frame(delta,document.hidden));return null;
 }
-export function Scenery({onReady,geo=false,store,probe}:{onReady:(s:Scenery)=>void;geo?:boolean;store:SimStore;probe:TerrainProbe}){
+export function Scenery({onReady,geo=false,store,probe,fieldHidden=false}:{onReady:(s:Scenery)=>void;geo?:boolean;store:SimStore;probe:TerrainProbe;fieldHidden?:boolean}){
  const {scene,gl}=useThree();const root=useMemo(()=>new THREE.Group(),[]),ref=useRef<Scenery|null>(null);
  useEffect(()=>{const s=buildScenery(root,scene,gl,{geo});ref.current=s;onReady(s);if(geo)probe.add(s.field);return()=>{probe.remove(s.field);ref.current=null;s.dispose()}},[root,scene,gl,onReady,geo,probe]);
  // The home airfield sits wherever the worker's current frame puts it (it moves when a long flight re-anchors).
- useFrame(()=>{const h=store.latest?.geo?.home;ref.current?.setHome(h?.position??[0,0,0],h?.rotationY??0)});
+ useFrame(()=>{const h=store.latest?.geo?.home;ref.current?.setHome(h?.position??[0,0,0],h?.rotationY??0);if(ref.current)ref.current.field.visible=!fieldHidden});
  return <primitive object={root}/>;
 }
 export function Aircraft({store,model}:{store:SimStore;model:AircraftModel}){
@@ -92,8 +92,9 @@ export function QualityGovernor({store,quality}:{store:SimStore;quality:"high"|"
  * mesh position (double precision in JS); three.js combines it with the camera in doubles, which is what keeps
  * distant tiles free of float32 jitter (the floating origin).
  */
-export function GeoTerrain({store,probe}:{store:SimStore;probe:TerrainProbe}){
- const group=useMemo(()=>new THREE.Group(),[]);
+/** `hidden`: photorealistic 3D Tiles show the ground instead (the meshes still keep the camera clear of it). */
+export function GeoTerrain({store,probe,hidden=false}:{store:SimStore;probe:TerrainProbe;hidden?:boolean}){
+ const group=useMemo(()=>new THREE.Group(),[]);useEffect(()=>{group.visible=!hidden},[group,hidden]);
  const material=useMemo(()=>new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,metalness:0}),[]);
  useEffect(()=>{
   const meshes=new Map<string,THREE.Mesh>();
@@ -114,8 +115,8 @@ export function GeoTerrain({store,probe}:{store:SimStore;probe:TerrainProbe}){
  * Real buildings (extruded footprints) and airport surfaces (runways, taxiways, aprons) with runway edge lights.
  * Flat-shaded, both sides drawn; airport surfaces are pulled towards the camera so they never flicker into terrain.
  */
-export function GeoFeatures({store,probe}:{store:SimStore;probe:TerrainProbe}){
- const group=useMemo(()=>new THREE.Group(),[]);
+export function GeoFeatures({store,probe,hidden=false}:{store:SimStore;probe:TerrainProbe;hidden?:boolean}){
+ const group=useMemo(()=>new THREE.Group(),[]);useEffect(()=>{group.visible=!hidden},[group,hidden]);
  const mats=useMemo(()=>({
   buildings:new THREE.MeshStandardMaterial({vertexColors:true,roughness:.85,metalness:0,flatShading:true,side:THREE.DoubleSide}),
   airports:new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,metalness:0,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4}),
@@ -173,18 +174,42 @@ export function GeoRoute({path}:{path:readonly (readonly [number,number,number])
 /**
  * Optional OGC 3D Tiles layer (NASA-AMMOS 3DTilesRendererJS): any tileset.json, or Google Photorealistic 3D Tiles
  * with an API key. Tiles are in ECEF; the worker's `frame.ecefToThree` puts them exactly on the local frame (and
- * again after each re-anchoring). `offsetM` lifts them, e.g. for a geoid/ellipsoid height difference. Render only.
+ * again after each re-anchoring). Heights: `offsetM` lifts them; without it the layer measures the tiles' surface on
+ * the home runway (where the simulator's ground is exactly y = 0) and removes the difference (geoid vs ellipsoid,
+ * DEM vs photogrammetry). Loaded tiles join the camera's ray index. Render only: physics never reads 3D Tiles.
  */
-export function Tiles3D({store,url,googleKey,offsetM=0}:{store:SimStore;url?:string;googleKey?:string;offsetM?:number}){
+export function Tiles3D({store,url,googleKey,offsetM,probe,onCredits,onError,onLoaded,status}:{store:SimStore;url?:string;googleKey?:string;offsetM?:number;probe?:TerrainProbe;
+ onCredits?:(lines:string[])=>void;onError?:(message:string)=>void;
+ /** First tile content loaded (true) or the layer went away (false). */
+ onLoaded?:(loaded:boolean)=>void;
+ /** Written for automation (flightSim.tiles3d): models loaded and the height correction applied. */
+ status?:{models:number;liftM:number;aligned:boolean}}){
  const {camera,gl}=useThree();
  const tiles=useMemo(()=>{const t=new TilesRenderer(googleKey?undefined:url);if(googleKey)t.registerPlugin(new GoogleCloudAuthPlugin({apiToken:googleKey,autoRefreshToken:true}));
   t.errorTarget=12;t.group.matrixAutoUpdate=false;t.group.name="tiles3d";return t},[url,googleKey]);
  useEffect(()=>{tiles.setCamera(camera);tiles.setResolutionFromRenderer(camera,gl);return()=>{tiles.deleteCamera(camera)}},[tiles,camera,gl]);
- useEffect(()=>()=>tiles.dispose(),[tiles]);
- const placed=useRef(-1);
+ useEffect(()=>{
+  let first=true;
+  const load=(e:{scene:THREE.Object3D})=>{e.scene.updateMatrixWorld(true);probe?.add(e.scene);if(status)status.models++;if(first){first=false;onLoaded?.(true)}},
+   drop=(e:{scene:THREE.Object3D})=>{probe?.remove(e.scene);if(status)status.models--};
+  let reported=false;const fail=(e:{error:Error})=>{if(reported)return;reported=true;onError?.(`3D Tiles could not be loaded: ${e.error?.message??"unknown error"}`)};
+  tiles.addEventListener("load-model",load as never);tiles.addEventListener("dispose-model",drop as never);tiles.addEventListener("load-error",fail as never);
+  return()=>{tiles.removeEventListener("load-model",load as never);tiles.removeEventListener("dispose-model",drop as never);tiles.removeEventListener("load-error",fail as never);tiles.dispose();onLoaded?.(false)};
+ },[tiles,probe,onError,onLoaded,status]);
+ const placed=useRef(-1),lift=useRef(offsetM??0),aligned=useRef(offsetM!==undefined),last=useRef(0),credits=useRef("");
+ const ray=useMemo(()=>new THREE.Raycaster(),[]);
  useFrame(()=>{const f=store.latest?.geo;if(!f)return;
-  if(f.frameEpoch!==placed.current){placed.current=f.frameEpoch;tiles.group.matrix.fromArray(f.frame.ecefToThree).premultiply(new THREE.Matrix4().makeTranslation(0,offsetM,0));tiles.group.matrixWorldNeedsUpdate=true}
-  camera.updateMatrixWorld();tiles.setResolutionFromRenderer(camera,gl);tiles.update()});
+  const place=()=>{tiles.group.matrix.fromArray(f.frame.ecefToThree).premultiply(new THREE.Matrix4().makeTranslation(0,lift.current,0));tiles.group.matrixWorldNeedsUpdate=true;tiles.group.updateMatrixWorld(true)};
+  if(f.frameEpoch!==placed.current){placed.current=f.frameEpoch;place()}
+  camera.updateMatrixWorld();tiles.setResolutionFromRenderer(camera,gl);tiles.update();
+  const now=performance.now();if(now-last.current<1000)return;last.current=now;
+  // Auto height: on the home runway (frame epoch 0) the simulator's ground is y = 0; lift the tiles to meet it.
+  if(!aligned.current&&f.frameEpoch===0){const ys:number[]=[];
+   for(const z of [150,400,650]){ray.set(new THREE.Vector3(0,3000,z),new THREE.Vector3(0,-1,0));ray.far=6000;const h=ray.intersectObject(tiles.group,true)[0];if(h)ys.push(h.point.y)}
+   if(ys.length===3){ys.sort((a,b)=>a-b);const dy=-ys[1]!;if(Math.abs(dy)<200){lift.current+=dy;place()}aligned.current=true}}
+  if(status){status.liftM=lift.current;status.aligned=aligned.current}
+  const lines=[...new Set(tiles.getAttributions().filter(a=>a.type==="string"&&a.value).map(a=>String(a.value)))],key=lines.join("|");
+  if(key!==credits.current){credits.current=key;onCredits?.(lines)}});
  return <primitive object={tiles.group}/>;
 }
 export type {WorldSnapshot};

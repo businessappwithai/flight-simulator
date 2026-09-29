@@ -67,8 +67,11 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   `steerTo` and re-anchors the local frame under the aircraft every 25 km (`maybeRebase`, `frameEpoch`); the page
   moves the home airfield (`geo.home`) and restarts trails/maps on a new epoch. Airports come from the bundled
   OurAirports catalogue (`packages/geospatial/data/airports-catalog.json.gz`, served next to `sim.worker.js`).
-  Tiles go through a Cache API–backed `cachingFetch` (offline route packs: `PACK_ROUTE`); GeoTelemetry samples
-  (`WORLD_STREAM`) ride in flight traces for the Control Room; `&tiles3d=`/`&tiles3dKey=` add a 3D Tiles render layer.
+  Tiles go through a Cache API–backed `cachingFetch` (offline route packs: `PACK_ROUTE`; the page's app-shell service
+  worker `src/app-shell.sw.ts` registers on HTTPS or `?sw=1`); GeoTelemetry samples (`WORLD_STREAM`) ride in flight
+  traces and go live to Control Room tabs over the `flight-world-runtime` BroadcastChannel; `&tiles3d=` or a stored
+  Google key add a 3D Tiles render layer. Tests that need three.js import it from `apps/simulator/node_modules` (see
+  `tests/camera-clearance.test.ts`).
 - `@flight/experience`'s index re-exports the Bun SQLite store, which cannot load in a browser worker; import
   browser-safe pieces through subpath exports (e.g. `@flight/experience/fingerprint`).
 

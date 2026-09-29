@@ -1,4 +1,4 @@
-import type {RuntimeEvent} from "@flight/protocol";
+import {RUNTIME_CHANNEL,type RuntimeEvent} from "@flight/protocol";
 import {LiveDashboardModel,type DashboardMetrics,type DecisionWhy,type WorldStreamView} from "./live-dashboard.ts";
 import {TelemetryBuffer} from "./telemetry-buffer.ts";
 import {ReplayController,type ReplayState} from "./replay-controller.ts";
@@ -39,5 +39,9 @@ export class DashboardStore{
  togglePause(){this.#paused=!this.#paused;if(!this.#paused){this.#scheduled=false;this.#changed()}else{this.#view={...this.#view,paused:true,version:this.#view.version+1};for(const l of this.#listeners)l()}}
  exportJsonl(){return this.telemetry.toJsonl()}
  /** Live bridge: same-origin FLIGHT_RUNTIME_EVENT messages only. Ignored while a replay is loaded. */
- attachLive(target:Window){const h=(e:MessageEvent)=>{if(e.origin!==target.location.origin||this.#mode==="REPLAY")return;if(e.data?.type==="FLIGHT_RUNTIME_EVENT")this.ingest(e.data.event)};target.addEventListener("message",h);return()=>target.removeEventListener("message",h)}
+ attachLive(target:Window){const h=(e:MessageEvent)=>{if(e.origin!==target.location.origin||this.#mode==="REPLAY")return;if(e.data?.type==="FLIGHT_RUNTIME_EVENT")this.ingest(e.data.event)};target.addEventListener("message",h);
+  // A simulator open in another tab of this site relays its live telemetry (GeoTelemetry) over a BroadcastChannel.
+  const ch=typeof BroadcastChannel==="function"?new BroadcastChannel(RUNTIME_CHANNEL):undefined;
+  if(ch)ch.onmessage=(e:MessageEvent)=>{if(this.#mode==="REPLAY")return;const ev=e.data?.type==="FLIGHT_RUNTIME_EVENT"?e.data.event:undefined;if(ev&&typeof ev.type==="string")this.ingest(ev)};
+  return()=>{target.removeEventListener("message",h);ch?.close()}}
 }

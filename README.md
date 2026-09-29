@@ -80,8 +80,10 @@ service the local rule-based provider stands in; an Open-Jev endpoint can be con
   follows the great circle at a terrain-safe altitude, descends on a 3° profile and lands on the destination runway
   (×16 and ×32 time acceleration for long legs). Real terrain, buildings and runways stream in on the way. See
   *Flying between two airports* in ARCHITECTURE.md and WORLD_DATA.md for self-hosted data. **Save route for
-  offline** fetches every tile the route needs into the browser's cache first; the Control Room's **World stream**
-  card shows the flight's streaming telemetry; `&tiles3d=<tileset.json>` or `&tiles3dKey=<Google key>` adds 3D Tiles.
+  offline** fetches every tile the route needs into the browser's cache first (the page itself opens offline through
+  its service worker on HTTPS); the Control Room's **World stream** card shows the flight's streaming telemetry, live
+  from an open simulator tab or from a saved trace; `&tiles3d=<tileset.json>` or a Google Maps key (Jev & learning
+  panel) adds 3D Tiles.
 - URL options: `?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0`; real world
   `&airport=VOMM&runway=07&to=VOBL&toRunway=09L`. Invalid values
   fall back to defaults; `pilot=autopilot` needs a saved Jev key. Adaptive quality drops shadows, then resolution, when the frame rate stays low.

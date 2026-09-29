@@ -168,18 +168,32 @@ so the airports a flight sees never change mid-flight; the worker processes comm
 ### Offline route packs, GeoTelemetry and 3D Tiles
 
 - **Offline route pack.** The worker fetches tiles through `cachingFetch` over the browser's Cache API
-  (`cacheApiStore`), so every tile it receives is kept (Range requests keyed by range, for PMTiles). `PACK_ROUTE`
-  fetches ahead of time everything the route will need (`routePackTiles`: the 3×3 z12 terrain and, with features,
-  3×3 z14 feature tiles along the whole route — what the hold rule will ask for — plus render terrain in a corridor
-  and around both airports) and reports `ROUTE_PACK` progress; `CLEAR_TILE_CACHE` forgets it. The same bytes come
-  back offline, so an offline flight has the online flight's checksum (`tests/geo-offline.test.ts`).
+  (`cacheApiStore`, at most 20,000 responses, oldest dropped first), so every tile it receives is kept (Range requests
+  keyed by range, for PMTiles). `PACK_ROUTE` fetches ahead of time everything the route will need
+  (`routePackTiles`): the 3×3 z12 terrain and, with features, 3×3 z14 feature blocks along the whole route (what the
+  hold rule will ask for), plus what the streamer's own LOD planner (`planTiles`) requests at points along the route,
+  parked, climbing out and turning near both airports and at cruise height between them. It reports `ROUTE_PACK` progress;
+  `CLEAR_TILE_CACHE` forgets the tiles. The same bytes come back offline, so an offline flight has the online flight's
+  checksum, with or without buildings data (`tests/geo-offline.test.ts`). The page itself opens offline through an
+  app-shell service worker (`sw.js`, network first with a cache fallback, precaching the page, its bundle, the
+  simulation worker and the airport catalogue), registered on HTTPS (Pages) or with `?sw=1`.
 - **GeoTelemetry.** `GeoWorld.streamSample` describes the physics world around the aircraft (tiles held, tiles still
   missing in the 3×3 blocks, clock holds and time held), the render streamer (wanted, queued, in flight, loaded,
   failed, aborted, cache entries/MB/evictions/hit rate, p50/p95 tile latency) and destination readiness. The worker
   records a sample every 10 s of flight and at each re-anchoring as `WORLD_STREAM` runtime events in the flight
-  trace; the Control Room's **World stream** card shows the latest one with trends. Observation only.
-- **3D Tiles.** `?tiles3d=<tileset.json>` or `?tiles3dKey=<Google Maps key>` (Photorealistic 3D Tiles) adds an OGC
-  3D Tiles layer rendered by NASA-AMMOS 3DTilesRendererJS. `status.frame.ecefToThree` (the exact inverse of the
-  anchor frame, as a matrix) places the ECEF tiles on the local frame, again after each re-anchoring;
-  `&tiles3dOffset=<m>` lifts them (geoid vs ellipsoid heights). Render only: physics never reads 3D Tiles.
+  trace, and emits it to the page, which relays it live on the `flight-world-runtime` BroadcastChannel: a Control
+  Room open in another tab of the same site shows it as it happens (LIVE mode), and a loaded trace replays it. The
+  **World stream** card shows the latest sample with trends. Observation only.
+- **3D Tiles.** `?tiles3d=<tileset.json>`, or a Google Maps Platform key for Photorealistic 3D Tiles (entered in the
+  Jev & learning panel and kept only in this browser; `&tiles3dKey=` in a link is saved and removed from the address
+  bar), adds an OGC 3D Tiles layer rendered by NASA-AMMOS 3DTilesRendererJS. `status.frame.ecefToThree` (the exact
+  inverse of the anchor frame, as a matrix) places the ECEF tiles on the local frame, again after each re-anchoring.
+  Heights: the layer measures the tiles' surface on the home runway, where the simulator's ground is exactly y = 0,
+  and removes the difference (geoid vs ellipsoid, DEM vs photogrammetry); `&tiles3dOffset=<m>` sets it instead. The
+  tileset's data credits (Google's included) join the attribution line; loaded tiles join the camera's ray index;
+  once photorealistic tiles have loaded, the streamed terrain, features and procedural airfield are hidden (they
+  still keep the camera clear) because the tiles are the ground. Render only: physics never reads 3D Tiles.
   `scripts/make-test-tileset.ts` writes a one-box tileset for testing without a key.
+- **Rejected worlds.** When the worker refuses `SET_WORLD` (`ERROR.command`), the page retries without the part it
+  objected to (`recoverWorld`: unknown runway, destination or destination runway, bad terrain or features URL) and
+  only falls back to what the worker is flying when the departure airport itself is unknown; the URL follows.

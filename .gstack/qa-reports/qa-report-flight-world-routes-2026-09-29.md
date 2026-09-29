@@ -41,3 +41,14 @@
 - The minimap's north arrow and the instruments now use true north / MSL in the real world (they showed the local
   frame's heading and height above the runway before).
 - Software rendering limits the sim rate to ~×3 in this container; real GPUs reach ×32.
+
+## Follow-up pass (`route-qa-3.mjs`, production build under `/flight-simulator/` as on Pages)
+
+| Flow | Result |
+|---|---|
+| Pages smoke on the PR failed "Phone: panel and Start card do not overlap" (ISSUE-006): the search row made the start card 22 px taller than the space the phone layout reserved | fixed: the card publishes its height (`--start-h`), is capped between toolbar and dock, and on phones the airport picker steps aside while the Jev panel is open; local smoke 16/16 |
+| Offline end to end: app shell installed (`?sw=1`), **Save route for offline** VOMM → VOAR (796 tiles in 12 s), network switched off, page reloaded from the service worker, autopilot flight lands: "Arrived at VOAR · runway 06/24" | pass (`route-i-offline-*.png`); first run missed a few render tiles (z8 ring, departure turn north of the field), the pack now follows the LOD planner including parked, look-ahead and turn rings: 0 tile requests failed offline (only the Jev endpoint) |
+| Live World stream: Control Room tab in LIVE mode shows the simulator's GeoTelemetry while it flies (BroadcastChannel) | pass (`route-k-live-world-stream.png`) |
+| 3D Tiles height: a 3 m slab over the VOMM 07 threshold whose ground is 30 m too high is lowered by the measured −33.0 m onto the runway | pass (`route-j-tiles3d-aligned.png`) |
+| Google 3D Tiles key in a link: saved in this browser (masked in the panel), removed from the address bar; unreachable here → "3D Tiles could not be loaded", own terrain kept; **Remove** clears it | pass (`route-l-google-key.png`) |
+| Rejected worlds: unknown runway / destination runway / bad terrain or features URL now drop only that part (`recoverWorld`, unit-tested) | pass |

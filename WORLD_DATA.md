@@ -64,16 +64,25 @@ The build copies it next to `sim.worker.js`; the worker falls back to the bundle
 ## Offline route packs
 
 With a destination set, **Save route for offline** on the start card (`PACK_ROUTE`) fetches every tile the route
-needs: the physics terrain (and feature) blocks along the whole route, render terrain in a 30 km corridor and around
-both airports. Tiles are kept in the browser's Cache API (HTTPS or localhost only), as is every tile fetched during a
+needs: the physics terrain (and feature) blocks along the whole route, plus the render tiles the streamer's LOD
+planner will ask for (parked, climbing out and turning near both airports, at cruise height between them). About 790
+terrain tiles for a 50 km route, 1,020 for 270 km, 1,660 for 540 km (plus roughly as many feature tiles with buildings
+on); at ~70 KB per terrain tile that is 55–120 MB. Tiles are kept in the
+browser's Cache API (HTTPS or localhost only; at most 20,000, oldest dropped first), as is every tile fetched during a
 flight, so a packed route flies without a network and with the same checksum. **Clear** removes them.
+
+The simulator page itself opens offline through its service worker (`sw.js`, registered on HTTPS such as GitHub Pages,
+or anywhere with `?sw=1`): open the site once online, save the route, and it can then be flown with no network.
 
 ## 3D Tiles
 
 `&tiles3d=<tileset.json URL>` renders any OGC 3D Tiles tileset (e.g. one exported from Cesium ion or produced with
-py3dtiles), `&tiles3dKey=<Google Maps Platform key>` uses Google Photorealistic 3D Tiles (the key must have the Map
-Tiles API enabled; Google's attribution appears on the tiles). They are drawn with 3DTilesRendererJS over the
-streamed terrain and are not used by physics. `bun scripts/make-test-tileset.ts <dir>` writes a one-box test tileset.
+py3dtiles). For Google Photorealistic 3D Tiles enter a Google Maps Platform key (Map Tiles API enabled; usage is
+billed to it) in the **Jev & learning** panel; it is kept only in this browser (a `&tiles3dKey=` in a link is saved
+the same way and removed from the address bar). Google's data credits are shown in the attribution line, and once its
+tiles load they replace the streamed terrain and the procedural airfield on screen. Heights are matched to the
+simulator's runway automatically (or set with `&tiles3dOffset=<m>`). 3D Tiles are never used by physics.
+`bun scripts/make-test-tileset.ts <dir> [lat lon groundMsl widthM heightM]` writes a one-box test tileset.
 
 ## Determinism
 

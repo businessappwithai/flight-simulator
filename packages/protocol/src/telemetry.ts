@@ -14,6 +14,8 @@ export type RuntimeEvent =
  * What the physics world holds and lacks around the aircraft, how the render streamer is doing, and whether the
  * destination is ready. Timings are wall-clock and never affect the flight.
  */
+/** BroadcastChannel over which an open simulator relays live runtime events to Control Room tabs (same origin). */
+export const RUNTIME_CHANNEL="flight-world-runtime";
 export interface WorldStreamSample{
  airport:string;state:"LOADING"|"READY"|"ERROR";frameEpoch:number;position:{lat:number;lon:number;altMsl:number};
  features:"OFF"|"LOADING"|"READY"|"UNAVAILABLE";

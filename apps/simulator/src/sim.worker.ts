@@ -133,7 +133,7 @@ async function handle(data:SimCommand){
      }
     }
     geo?.update(pose());
-    if(geo&&geo.state!=="LOADING"){const bucket=world.tick/STREAM_EVERY_TICKS;if(bucket!==lastStreamSample||geo.frameEpoch!==lastStreamEpoch){lastStreamSample=bucket;lastStreamEpoch=geo.frameEpoch;tracer.stream(world.tick,geo.streamSample(pose()))}}
+    if(geo&&geo.state!=="LOADING"){const bucket=world.tick/STREAM_EVERY_TICKS;if(bucket!==lastStreamSample||geo.frameEpoch!==lastStreamEpoch){lastStreamSample=bucket;lastStreamEpoch=geo.frameEpoch;const stream=geo.streamSample(pose());tracer.stream(world.tick,stream);emit({type:"WORLD_STREAM",tick:String(world.tick),stream})}}
     const finishing=done()&&!ended;if(finishing)ended=true;
     const landed=world.objective.phase==="COMPLETE";
     if(!done()&&!paused&&ticks>0)copilot.advise(world.tick,sensors.observe(world),flownIntent(),takeAdvice);

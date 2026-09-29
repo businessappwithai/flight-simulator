@@ -9,7 +9,7 @@ const pct=(x:number)=>`${(x*100).toFixed(1)}%`;
 const Bar=({value}:{value:number})=><div className="bar"><i style={{width:`${Math.max(0,Math.min(100,value*100))}%`}}/></div>;
 function Header({v,store,fileRef}:{v:DashboardView;store:DashboardStore;fileRef:React.RefObject<HTMLInputElement|null>}){
  const badge=v.mode==="LIVE"?"● LIVE":`● REPLAY ${v.replay==="DONE"?"(end)":v.replay.toLowerCase()}`;
- const status=v.mode==="REPLAY"?`replay ${v.replayPosition.index}/${v.replayPosition.total} events · ${v.metrics.decisions} decisions`:v.metrics.decisions?`${v.metrics.decisions} decisions observed`:"waiting for telemetry";
+ const status=v.mode==="REPLAY"?`replay ${v.replayPosition.index}/${v.replayPosition.total} events · ${v.metrics.decisions} decisions`:v.metrics.decisions?`${v.metrics.decisions} decisions observed`:v.stream?"world stream live · no decisions yet":"waiting for telemetry";
  const download=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([store.exportJsonl()],{type:"application/x-ndjson"}));a.download="flight-world-telemetry.jsonl";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
  return <header className="header">
   <div className="title"><strong>Replay & Why</strong><span className={`badge ${v.mode}`} data-testid="mode">{badge}</span><span className="muted" data-testid="status">{status}</span></div>

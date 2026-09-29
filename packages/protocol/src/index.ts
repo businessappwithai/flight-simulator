@@ -178,6 +178,7 @@ export interface TemporalSummary {
 export type { SimCommand, SimEvent, SimPilot, InspectorCommand, LearningBook, LearningEntry, LearningInsight, LearningTally, LearningExample, FlightTrace, CopilotAdvice, CopilotStatus, GeoStatus, GeoRouteStatus, GeoAirportMarker, GeoCatalogAirport, TerrainPatch, FeaturePatch, Vec3Tuple } from "./worker.ts";
 
 export type { RuntimeEvent, DecisionTrace, WorldStreamSample } from "./telemetry.ts";
+export { RUNTIME_CHANNEL } from "./telemetry.ts";
 
 export type { LabConfig, LabModelParams, LabEvaluation, LabMetrics, LabEpisodeSummary, LabImportance, LabTraining, LabGenerationSummary,
   LabTrackPoint, LabDecision, LabEpisodeDetail, LabTreeStep, LabExplanation, LabCommand, LabEvent } from "./lab.ts";

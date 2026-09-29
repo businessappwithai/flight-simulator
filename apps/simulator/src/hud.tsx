@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState,useSyncExternalStore} from "react";
+import {useCallback,useEffect,useRef,useState,useSyncExternalStore} from "react";
 import type {GeoStatus,PilotIntent} from "@flight/protocol";
 import {SixPack,MiniMap,flightData} from "./instruments.ts";
 import type {SimStore,HudState} from "./sim-store.ts";
@@ -63,13 +63,20 @@ export function TouchPad({store}:{store:SimStore}){
 }
 /** Shown while the aircraft is parked on the runway: nothing moves until the pilot starts. */
 export function StartPanel({hud,store}:{hud:HudState;store:SimStore}){
+ // Publish the card's height (it grows with the search, route and offline rows) so phone layouts keep the Jev
+ // panel above it instead of under it.
+ const observer=useRef<ResizeObserver|null>(null);
+ const measure=useCallback((el:HTMLDivElement|null)=>{observer.current?.disconnect();observer.current=null;const root=document.documentElement.style;
+  if(!el){root.removeProperty("--start-h");return}
+  const set=()=>root.setProperty("--start-h",`${Math.ceil(el.getBoundingClientRect().height)}px`);set();observer.current=new ResizeObserver(set);observer.current.observe(el)},[]);
  if(hud.started||!hud.world)return null;
  const geo=hud.geo,loading=geo?.state==="LOADING";
- return <div className="start panel" role="region" aria-label="Ready for departure" data-testid="start-panel">
+ return <div className="start panel" ref={measure} role="region" aria-label="Ready for departure" data-testid="start-panel">
   <b>{geo?`Ready on ${geo.airport} runway ${geo.runway}`:"Ready on runway 18"}</b>
   {geo&&<p className="k">{geo.name}</p>}
   {loading?<p>Loading real terrain around the airport…</p>:<p className="intro">Engine at idle, brakes set. Start to begin the take-off roll, or use any flight control.</p>}
   <WorldPicker hud={hud} store={store}/>
+  <p className="k picker-hint">Close Jev &amp; learning to choose airports.</p>
   <div className="start-actions">
    <button className="primary" onClick={()=>{store.setPilot("MANUAL");store.start()}} data-testid="start-manual">Start (manual)</button>
    <button onClick={()=>store.setPilot("AUTOPILOT",true)} aria-disabled={!hud.jevKeyHint} className={hud.jevKeyHint?undefined:"locked"} data-testid="start-autopilot">Start on autopilot</button>
@@ -152,6 +159,19 @@ function Copilot({hud}:{hud:HudState}){
   <p className="k" data-testid="xgb-status">XGBoost: {x?.trained?`trained on ${x.examples} examples (${x.version})`:x?.detail??"waiting for a finished flight"}</p>
  </div>;
 }
+/** Google Photorealistic 3D Tiles over real airports: a Maps Platform key (Map Tiles API), kept only in this browser. */
+function Tiles3DKey({hud,store}:{hud:HudState;store:SimStore}){
+ const [key,setKey]=useState(""),[problem,setProblem]=useState<string>();
+ return <div className="tiles3d" data-testid="tiles3d-key">
+  {hud.tiles3dKeyHint?<div className="row"><span>3D Tiles key <code>{hud.tiles3dKeyHint}</code></span><button onClick={()=>store.removeTiles3dKey()} data-testid="tiles3d-remove">Remove</button></div>
+   :<form className="row" onSubmit={e=>{e.preventDefault();const p=store.saveTiles3dKey(key);setProblem(p);if(!p)setKey("")}}>
+    <label htmlFor="tiles3d-key" className="sr">Google Maps API key for 3D Tiles</label>
+    <input id="tiles3d-key" type="password" value={key} onChange={e=>{setKey(e.target.value);setProblem(undefined)}} placeholder="Google 3D Tiles key (optional)" autoComplete="off" spellCheck={false} data-testid="tiles3d-input"/>
+    <button type="submit" disabled={!key.trim()} data-testid="tiles3d-save">Save</button></form>}
+  {problem&&<p className="problem" role="alert">{problem}</p>}
+  <p className="k">Photorealistic 3D Tiles over real airports (Map Tiles API; usage is billed to the key). Display only.</p>
+ </div>;
+}
 /** Jev key entry/removal and the learning kept in this browser. */
 export function AiPanel({hud,store,onClose}:{hud:HudState;store:SimStore;onClose:()=>void}){
  const [key,setKey]=useState(""),[problem,setProblem]=useState<string>(),[confirm,setConfirm]=useState(false);
@@ -175,6 +195,7 @@ export function AiPanel({hud,store,onClose}:{hud:HudState;store:SimStore;onClose
   {hud.insight&&<p className="insight" data-testid="insight">Best known here: <b>{hud.insight.action.replaceAll("_"," ").toLowerCase()}</b> · landed {Math.round(hud.insight.successRate*100)}% of {hud.insight.visits}
    <span className="k"> ({[hud.insight.manual&&`${hud.insight.manual} manual`,hud.insight.autopilot&&`${hud.insight.autopilot} autopilot`].filter(Boolean).join(", ")})</span></p>}
   {on&&<Copilot hud={hud}/>}
+  <Tiles3DKey hud={hud} store={store}/>
   <div className="row traces" data-testid="traces">
    <span title="Recent flights as Control Room telemetry">Traces: <b>{hud.traces.flights}</b> <span className="k">({hud.traces.manual} manual, {hud.traces.autopilot} autopilot)</span></span>
    <button onClick={()=>store.downloadTraces()} disabled={!hud.traces.flights} data-testid="traces-download" title="JSONL for the Control Room replay">Download</button>

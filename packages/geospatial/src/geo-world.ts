@@ -655,7 +655,7 @@ export class GeoWorld {
     const route = this.#route;
     if (!route) throw new Error("no route to pack (set a destination)");
     const src = this.options.features, withFeatures = !!src && this.featuresState !== "UNAVAILABLE" && this.featuresState !== "OFF";
-    const { terrain, features } = routePackTiles(route, { features: withFeatures });
+    const { terrain, features } = routePackTiles(route, { features: withFeatures, terrainMaxZoom: this.options.terrain.maxZoom });
     const jobs: (() => Promise<unknown>)[] = [...terrain.map(t => () => this.options.terrain.load(t, this.#abort.signal)), ...(withFeatures ? features.map(t => () => src!.load(t, this.#abort.signal)) : [])];
     let next = 0, done = 0, failed = 0;
     const worker = async () => {
