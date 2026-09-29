@@ -27,6 +27,12 @@ export interface LodPolicy {
   maxRadiusScale: number;
   /** Per-layer distance caps (m): dense layers such as buildings stop well inside their ring. */
   layerMaxDistanceM: Partial<Record<WorldLayer, number>>;
+  /**
+   * Layers whose data exists at a single zoom (OpenMapTiles buildings and aeroways: z14). They are requested at that
+   * zoom within their distance cap whatever the surrounding ring's zoom; asking for them at a ring's coarser zoom
+   * would ask for tiles that do not exist.
+   */
+  layerZoom?: Partial<Record<WorldLayer, number>>;
 }
 
 export const DEFAULT_LOD_POLICY: LodPolicy = {
@@ -38,12 +44,14 @@ export const DEFAULT_LOD_POLICY: LodPolicy = {
     MEDIUM: ["terrain", "water", "landcover", "airports"],
     LOW: ["terrain", "water", "airports"],
   },
-  buildingsBelowAglM: 1500,
+  // Buildings read well from a light aircraft up to ~10,000 ft AGL; they stream within 6 km (z14).
+  buildingsBelowAglM: 3000,
   roadsBelowAglM: 3000,
   detailStepsAglM: [900, 4500],
   referenceSpeedMps: 120,
   maxRadiusScale: 2,
-  layerMaxDistanceM: { buildings: 5000, airports: 15000 },
+  layerMaxDistanceM: { buildings: 6000, airports: 10000 },
+  layerZoom: { buildings: 14, airports: 14 },
 };
 
 /** Detail level of the innermost ring: 0 = VERY_HIGH, 1 = HIGH, 2 = MEDIUM. */
