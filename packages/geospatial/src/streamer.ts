@@ -61,6 +61,8 @@ export class WorldStreamer {
   #loaded = 0;
   #failed = 0;
   #aborted = 0;
+  /** Recent load times (ms) of tiles that arrived, for telemetry (newest last, bounded). */
+  readonly #latencies: number[] = [];
   readonly #maxConcurrent: number;
   readonly #headingAbortDeg: number;
   readonly #maxWanted: number;
@@ -119,9 +121,12 @@ export class WorldStreamer {
       const source = this.#sources.get(r.layer)!, controller = new AbortController();
       this.#inFlight.set(r.key, { request: r, controller });
       started.push(r.key);
+      const t0 = performance.now();
       source.load(r.tile, controller.signal).then(value => {
         if (this.#inFlight.get(r.key)?.controller !== controller) return; // aborted or superseded
         this.#inFlight.delete(r.key);
+        this.#latencies.push(performance.now() - t0);
+        if (this.#latencies.length > 256) this.#latencies.shift();
         const loaded: LoadedTile = { key: r.key, layer: r.layer, tile: r.tile, value };
         if (this.#cache.set(r.key, loaded, source.sizeOf(value))) { this.#loaded++; this.options.onTile?.(loaded); }
         this.#pump();
@@ -153,7 +158,8 @@ export class WorldStreamer {
   /** Resolves when nothing is loading or queued (tests, pre-flight warm-up). */
   async idle(pollMs = 0) { while (this.#inFlight.size || this.#queue.length) await new Promise(r => setTimeout(r, pollMs)); }
   dispose() { for (const f of this.#inFlight.values()) f.controller.abort(); this.#inFlight.clear(); this.#queue = []; this.#cache.clear(); }
-  stats(): { cache: CacheStats; inFlight: number; queued: number; wanted: number; loaded: number; failed: number; aborted: number } {
-    return { cache: this.#cache.stats(), inFlight: this.#inFlight.size, queued: this.#queue.length, wanted: this.#wanted.size, loaded: this.#loaded, failed: this.#failed, aborted: this.#aborted };
+  stats(): { cache: CacheStats; inFlight: number; queued: number; wanted: number; loaded: number; failed: number; aborted: number; latencyP50Ms: number | null; latencyP95Ms: number | null } {
+    const l = [...this.#latencies].sort((a, b) => a - b), q = (f: number) => (l.length ? l[Math.min(l.length - 1, Math.floor(f * l.length))]! : null);
+    return { cache: this.#cache.stats(), inFlight: this.#inFlight.size, queued: this.#queue.length, wanted: this.#wanted.size, loaded: this.#loaded, failed: this.#failed, aborted: this.#aborted, latencyP50Ms: q(0.5), latencyP95Ms: q(0.95) };
   }
 }

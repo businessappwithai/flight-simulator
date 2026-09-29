@@ -128,3 +128,72 @@ OpenStreetMap), any `{z}/{x}/{y}.pbf` server or TileJSON, or a PMTiles archive r
   aprons, and runway edge lights.
 - **Source unavailable.** Decided once before the flight: every feature tile is then empty and the runway stays
   synthesized; the badge says "buildings unavailable" and the manifest records it.
+
+### Flying between two airports
+
+`SET_WORLD {airport, runway, destination, destinationRunway?}` plans a cross-country flight. Airports come from the
+bundled OurAirports catalogue (`packages/geospatial/data/airports-catalog.json.gz`, ~27k fixed-wing airports with
+surveyed runway ends where OurAirports has them; rebuilt with `bun scripts/build-airport-catalog.ts`), which the
+worker loads in the background and searches for `FIND_AIRPORTS` (ICAO, IATA, name, city). `SET_WORLD` waits for it,
+so the airports a flight sees never change mid-flight; the worker processes commands strictly in order.
+
+- **Before the clock starts** (`GeoWorld.prepare`): the destination runway end is chosen (the one named, else the
+  longest runway's end most aligned with the inbound bearing), surveyed from vector features when available, its
+  elevation read from the DEM, and a great-circle route planned through a final-approach fix 12 km out on the
+  extended centreline. Nothing the route autopilot decides depends on data loaded after this point, except the
+  terrain the hold rule guarantees.
+- **Route autopilot.** `GeoWorld.routeTarget(world)` is a pure function of the snapshot: take-off, climb and cruise
+  towards a carrot 6 km ahead on the route at `max(min(cruise, 3° profile), terrain + 450 m)`, where the terrain is
+  the highest point in a 2 km corridor ahead as far as the loaded 3×3 tiles reach; then intercept the centreline,
+  fly the 3° glide path, flare and roll out. `steerTo` (`@flight/controller`) turns the target into controls, the
+  same control law as the mission autopilot. Arrival (on a destination runway, below 8 m/s) completes the flight.
+- **Re-anchoring.** Once the aircraft is 25 km from the local origin the worker calls `maybeRebase`: a new
+  `AnchorFrame` under the aircraft, aircraft and entity states transformed exactly through WGS84 (position,
+  velocity, heading, pitch), `frameEpoch` + 1. Local coordinates stay small and "up" stays level on flights of any
+  length. The home airfield keeps its place on Earth (`status.home` tells the page where to draw it); after the first
+  re-anchoring it is ordinary landable ground. `RESET` returns to the frame on the home runway. The decision is taken
+  from the state alone, so re-anchoring is as deterministic as the rest of the flight.
+- **Hold within a batch.** The worker checks `ensureAround` every tick (cached per tile), so a batch stops where the
+  aircraft crosses into a tile whose neighbours are not loaded yet; fast and slow networks give the same checksum
+  (`tests/geo-route.test.ts`).
+- **Landable anywhere.** Every open catalogue runway is landable (`catalogRunwayAt`), with or without buildings data.
+  On real terrain a touchdown no longer carries the sink rate into the next tick, so sloping runways can be rolled to
+  a stop; the flat airfield (and every procedural checksum) is unchanged.
+- **Page.** Search on the start card (From / To), `?to=VOBL&toRunway=09L`, a dashed route line and a green
+  destination beacon, route distance / ETA / phase in the badge, a route-following moving map, and ×16 / ×32 time
+  acceleration. Trails and maps restart when `frameEpoch` changes; terrain and feature meshes are re-sent under a new
+  epoch. The chase and orbit cameras stay above terrain and in front of hillsides and buildings (BVH ray queries with
+  three-mesh-bvh, presentation only). Instruments show true heading and altitude above mean sea level.
+
+### Offline route packs, GeoTelemetry and 3D Tiles
+
+- **Offline route pack.** The worker fetches tiles through `cachingFetch` over the browser's Cache API
+  (`cacheApiStore`, at most 20,000 responses, oldest dropped first), so every tile it receives is kept (Range requests
+  keyed by range, for PMTiles). `PACK_ROUTE` fetches ahead of time everything the route will need
+  (`routePackTiles`): the 3×3 z12 terrain and, with features, 3×3 z14 feature blocks along the whole route (what the
+  hold rule will ask for), plus what the streamer's own LOD planner (`planTiles`) requests at points along the route,
+  parked, climbing out and turning near both airports and at cruise height between them. It reports `ROUTE_PACK` progress;
+  `CLEAR_TILE_CACHE` forgets the tiles. The same bytes come back offline, so an offline flight has the online flight's
+  checksum, with or without buildings data (`tests/geo-offline.test.ts`). The page itself opens offline through an
+  app-shell service worker (`sw.js`, network first with a cache fallback, precaching the page, its bundle, the
+  simulation worker and the airport catalogue), registered on HTTPS (Pages) or with `?sw=1`.
+- **GeoTelemetry.** `GeoWorld.streamSample` describes the physics world around the aircraft (tiles held, tiles still
+  missing in the 3×3 blocks, clock holds and time held), the render streamer (wanted, queued, in flight, loaded,
+  failed, aborted, cache entries/MB/evictions/hit rate, p50/p95 tile latency) and destination readiness. The worker
+  records a sample every 10 s of flight and at each re-anchoring as `WORLD_STREAM` runtime events in the flight
+  trace, and emits it to the page, which relays it live on the `flight-world-runtime` BroadcastChannel: a Control
+  Room open in another tab of the same site shows it as it happens (LIVE mode), and a loaded trace replays it. The
+  **World stream** card shows the latest sample with trends. Observation only.
+- **3D Tiles.** `?tiles3d=<tileset.json>`, or a Google Maps Platform key for Photorealistic 3D Tiles (entered in the
+  Jev & learning panel and kept only in this browser; `&tiles3dKey=` in a link is saved and removed from the address
+  bar), adds an OGC 3D Tiles layer rendered by NASA-AMMOS 3DTilesRendererJS. `status.frame.ecefToThree` (the exact
+  inverse of the anchor frame, as a matrix) places the ECEF tiles on the local frame, again after each re-anchoring.
+  Heights: the layer measures the tiles' surface on the home runway, where the simulator's ground is exactly y = 0,
+  and removes the difference (geoid vs ellipsoid, DEM vs photogrammetry); `&tiles3dOffset=<m>` sets it instead. The
+  tileset's data credits (Google's included) join the attribution line; loaded tiles join the camera's ray index;
+  once photorealistic tiles have loaded, the streamed terrain, features and procedural airfield are hidden (they
+  still keep the camera clear) because the tiles are the ground. Render only: physics never reads 3D Tiles.
+  `scripts/make-test-tileset.ts` writes a one-box tileset for testing without a key.
+- **Rejected worlds.** When the worker refuses `SET_WORLD` (`ERROR.command`), the page retries without the part it
+  objected to (`recoverWorld`: unknown runway, destination or destination runway, bad terrain or features URL) and
+  only falls back to what the worker is flying when the departure airport itself is unknown; the URL follows.

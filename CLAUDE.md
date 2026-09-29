@@ -63,6 +63,15 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   coordinates relative to a `FloatingOrigin` that re-centres every 5 km. `WorldStreamer` (async, timing-dependent)
   feeds rendering only. Physics, sensors and the AI read the deterministic `SimulationWorld` (fixed z12 tiles,
   decimetre elevations, obstacle boxes, runways) whose manifest of tile hashes is recorded for replay.
+- **Two-airport flights.** With a destination, the worker's autopilot flies `GeoWorld.routeTarget` through
+  `steerTo` and re-anchors the local frame under the aircraft every 25 km (`maybeRebase`, `frameEpoch`); the page
+  moves the home airfield (`geo.home`) and restarts trails/maps on a new epoch. Airports come from the bundled
+  OurAirports catalogue (`packages/geospatial/data/airports-catalog.json.gz`, served next to `sim.worker.js`).
+  Tiles go through a Cache API–backed `cachingFetch` (offline route packs: `PACK_ROUTE`; the page's app-shell service
+  worker `src/app-shell.sw.ts` registers on HTTPS or `?sw=1`); GeoTelemetry samples (`WORLD_STREAM`) ride in flight
+  traces and go live to Control Room tabs over the `flight-world-runtime` BroadcastChannel; `&tiles3d=` or a stored
+  Google key add a 3D Tiles render layer. Tests that need three.js import it from `apps/simulator/node_modules` (see
+  `tests/camera-clearance.test.ts`).
 - `@flight/experience`'s index re-exports the Bun SQLite store, which cannot load in a browser worker; import
   browser-safe pieces through subpath exports (e.g. `@flight/experience/fingerprint`).
 
@@ -79,7 +88,8 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   Learning (`packages/learning`) is a JSON book of `situationFingerprint|action` → landings/crashes, persisted by
   the store in `localStorage["flightWorld.learning.v1"]` and validated with `parseBook` on load.
 - URL options (also used by QA): `?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0`;
-  real world: `&airport=VNKT&runway=02` (`&terrain=<Terrarium URL template>`, `&features=<vector tiles / .pmtiles URL | off>`).
+  real world: `&airport=VNKT&runway=02` (`&terrain=<Terrarium URL template>`, `&features=<vector tiles / .pmtiles URL | off>`),
+  cross-country `&to=VOBL&toRunway=09L`.
   `globalThis.flightSim` exposes read-only `world`, `pilot`, `camera`, `fps`, `paused`, `checksum` for automation.
 
 ## Browser QA

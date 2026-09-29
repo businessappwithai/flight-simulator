@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState,useSyncExternalStore} from "react";
+import {useCallback,useEffect,useRef,useState,useSyncExternalStore} from "react";
 import type {GeoStatus,PilotIntent} from "@flight/protocol";
 import {SixPack,MiniMap,flightData} from "./instruments.ts";
 import type {SimStore,HudState} from "./sim-store.ts";
@@ -9,18 +9,18 @@ function useAnimationFrame(draw:()=>void){useEffect(()=>{let id=0;const loop=()=
 export function Instruments({store}:{store:SimStore}){
  const ref=useRef<HTMLCanvasElement>(null),six=useRef<SixPack|null>(null);
  useEffect(()=>{if(ref.current)six.current=new SixPack(ref.current)},[]);
- useAnimationFrame(useRef(()=>{const l=store.latest;if(l&&six.current)six.current.draw(flightData(l.world,store.prevHeading,store.turnDt))}).current);
+ useAnimationFrame(useRef(()=>{const l=store.latest;if(l&&six.current)six.current.draw(flightData(l.world,store.prevHeading,store.turnDt,l.geo))}).current);
  return <div className="panel instruments"><canvas ref={ref} aria-label="Flight instruments"/></div>;
 }
 export function MovingMap({store}:{store:SimStore}){
  const ref=useRef<HTMLCanvasElement>(null),map=useRef<MiniMap|null>(null);
- useEffect(()=>{if(!ref.current)return;map.current=new MiniMap(ref.current);return store.onReset(()=>map.current?.reset())},[store]);
- useAnimationFrame(useRef(()=>{const l=store.latest;if(l&&map.current)map.current.draw(l.world)}).current);
+ useEffect(()=>{if(!ref.current)return;map.current=new MiniMap(ref.current);const a=store.onReset(()=>map.current?.reset()),b=store.onRebase(()=>map.current?.reset());return()=>{a();b()}},[store]);
+ useAnimationFrame(useRef(()=>{const l=store.latest;if(l&&map.current)map.current.draw(l.world,l.geo?.route,l.geo?.headingDeg)}).current);
  return <div className="panel map"><canvas ref={ref} aria-label="Moving map"/></div>;
 }
 export function Readout({hud}:{hud:HudState}){
  if(!hud.world)return <div className="panel readout"/>;
- const d=flightData(hud.world,undefined,0),rows:[string,string][]=[["IAS",`${d.speedKt.toFixed(0)} kt`],["ALT",`${d.altFt.toFixed(0)} ft`],["V/S",`${d.vsFpm>=0?"+":""}${d.vsFpm.toFixed(0)} fpm`],["HDG",`${d.headingDeg.toFixed(0).padStart(3,"0")}°`],["FPS",String(hud.fps)],["SIM",`×${hud.simRate.toFixed(2)}`],["CHK",(hud.checksum??"—").slice(0,10)]];
+ const d=flightData(hud.world,undefined,0,hud.geo),rows:[string,string][]=[["IAS",`${d.speedKt.toFixed(0)} kt`],["ALT",`${d.altFt.toFixed(0)} ft`],["V/S",`${d.vsFpm>=0?"+":""}${d.vsFpm.toFixed(0)} fpm`],["HDG",`${d.headingDeg.toFixed(0).padStart(3,"0")}°`],["FPS",String(hud.fps)],["SIM",`×${hud.simRate.toFixed(2)}`],["CHK",(hud.checksum??"—").slice(0,10)]];
  return <div className="panel readout">{rows.map(([k,v])=><div key={k}><span className="k">{k}</span>{v}</div>)}</div>;
 }
 export function TopBar({hud,camera,panel,ai,onCamera,onPanel,onAi,onHelp,store}:{hud:HudState;camera:CameraMode;panel:boolean;ai:boolean;onCamera:()=>void;onPanel:()=>void;onAi:()=>void;onHelp:()=>void;store:SimStore}){
@@ -63,13 +63,20 @@ export function TouchPad({store}:{store:SimStore}){
 }
 /** Shown while the aircraft is parked on the runway: nothing moves until the pilot starts. */
 export function StartPanel({hud,store}:{hud:HudState;store:SimStore}){
+ // Publish the card's height (it grows with the search, route and offline rows) so phone layouts keep the Jev
+ // panel above it instead of under it.
+ const observer=useRef<ResizeObserver|null>(null);
+ const measure=useCallback((el:HTMLDivElement|null)=>{observer.current?.disconnect();observer.current=null;const root=document.documentElement.style;
+  if(!el){root.removeProperty("--start-h");return}
+  const set=()=>root.setProperty("--start-h",`${Math.ceil(el.getBoundingClientRect().height)}px`);set();observer.current=new ResizeObserver(set);observer.current.observe(el)},[]);
  if(hud.started||!hud.world)return null;
  const geo=hud.geo,loading=geo?.state==="LOADING";
- return <div className="start panel" role="region" aria-label="Ready for departure" data-testid="start-panel">
+ return <div className="start panel" ref={measure} role="region" aria-label="Ready for departure" data-testid="start-panel">
   <b>{geo?`Ready on ${geo.airport} runway ${geo.runway}`:"Ready on runway 18"}</b>
   {geo&&<p className="k">{geo.name}</p>}
   {loading?<p>Loading real terrain around the airport…</p>:<p className="intro">Engine at idle, brakes set. Start to begin the take-off roll, or use any flight control.</p>}
   <WorldPicker hud={hud} store={store}/>
+  <p className="k picker-hint">Close Jev &amp; learning to choose airports.</p>
   <div className="start-actions">
    <button className="primary" onClick={()=>{store.setPilot("MANUAL");store.start()}} data-testid="start-manual">Start (manual)</button>
    <button onClick={()=>store.setPilot("AUTOPILOT",true)} aria-disabled={!hud.jevKeyHint} className={hud.jevKeyHint?undefined:"locked"} data-testid="start-autopilot">Start on autopilot</button>
@@ -78,18 +85,51 @@ export function StartPanel({hud,store}:{hud:HudState;store:SimStore}){
   {geo?.state==="ERROR"&&<p className="k" role="status">{geo.detail}</p>}
  </div>;
 }
-/** Where to fly from: the procedural airfield, or a real airport and runway with real terrain around it. */
+/**
+ * Where to fly from (the procedural airfield, or a real airport and runway with real terrain around it) and,
+ * optionally, where to fly to: any airport in the catalogue, found by ICAO/IATA code, name or city.
+ */
 function WorldPicker({hud,store}:{hud:HudState;store:SimStore}){
  if(!hud.catalog.length)return null;
- const airport=hud.catalog.find(a=>a.ident===hud.airport),runways=airport?.runways??[],runway=hud.geo?.runway??hud.runway??"";
+ const airport=store.airportInfo(hud.airport),runways=airport?.runways??(hud.geo?[hud.geo.runway]:[]),runway=hud.geo?.runway??hud.runway??"";
+ const listed=hud.catalog.some(a=>a.ident===hud.airport);
  return <div className="world-picker">
   <label>From <select value={hud.airport??""} onChange={e=>store.setWorld(e.target.value||null)} data-testid="world-airport">
    <option value="">Flight World airfield (procedural)</option>
+   {!listed&&hud.airport&&<option value={hud.airport}>{hud.airport} · {airport?.municipality||airport?.name||hud.geo?.name||""}</option>}
    {hud.catalog.map(a=><option key={a.ident} value={a.ident}>{a.ident} · {a.municipality||a.name}</option>)}
   </select></label>
-  {airport&&<label>Runway <select value={runway} onChange={e=>store.setWorld(airport.ident,e.target.value)} data-testid="world-runway">
+  {hud.airport&&<label>Runway <select value={runway} onChange={e=>store.setWorld(hud.airport!,e.target.value)} data-testid="world-runway">
    {runways.map(r=><option key={r} value={r}>{r}</option>)}
   </select></label>}
+  <AirportSearch hud={hud} store={store}/>
+  {hud.destination&&<p className="route-chip" data-testid="route-chip">To <b>{hud.destination}</b>{hud.geo?.route?<> runway {hud.geo.route.runway} · {hud.geo.route.name} · {km(hud.geo.route.totalM)}</>:null}
+   <button className="close" onClick={()=>store.setDestination(null)} aria-label="Remove destination" data-testid="route-clear">×</button></p>}
+  {hud.destination&&hud.geo?.route&&<RoutePackRow hud={hud} store={store}/>}
+ </div>;
+}
+/** Offline route pack: fetch the route's tiles now so the flight also works without a network. */
+function RoutePackRow({hud,store}:{hud:HudState;store:SimStore}){
+ const p=hud.routePack,running=p?.state==="RUNNING";
+ const status=!p?"":running?(p.total?`${p.done} / ${p.total} tiles…`:"planning…"):p.state==="CLEARED"?"offline tiles cleared":
+  `${p.state==="DONE"?"✓ saved":"⚠"} ${p.done-p.failed} tiles${p.cached!==null?` · ${p.cached.toLocaleString()} kept in this browser`:""}${p.detail?` · ${p.detail}`:""}`;
+ return <p className="route-pack" data-testid="route-pack">
+  <button onClick={()=>store.packRoute()} disabled={running||hud.geo?.state!=="READY"} data-testid="route-pack-save">Save route for offline</button>
+  {p&&!running&&<button onClick={()=>store.clearTileCache()} data-testid="route-pack-clear">Clear</button>}
+  <span className="k" data-testid="route-pack-status">{status}</span></p>;
+}
+const km=(m:number)=>m>=10_000?`${Math.round(m/1000)} km`:`${(m/1000).toFixed(1)} km`;
+/** Search every airport in the catalogue; each result can become the departure or (once departing from a real airport) the destination. */
+function AirportSearch({hud,store}:{hud:HudState;store:SimStore}){
+ const [open,setOpen]=useState(false),q=hud.search.query;
+ return <div className="airport-search">
+  <input type="search" value={q} onChange={e=>{store.findAirports(e.target.value);setOpen(true)}} onFocus={()=>setOpen(true)} aria-label="Find an airport"
+   placeholder={`Find an airport · ${hud.catalogTotal.toLocaleString()} worldwide`} data-testid="airport-search" spellCheck={false} autoComplete="off"/>
+  {open&&q.trim()&&<ul className="results" data-testid="airport-results">{hud.search.airports.length?hud.search.airports.map(a=><li key={a.ident}>
+   <span className="name"><b>{a.ident}</b>{a.iata?` ${a.iata}`:""} · {a.municipality||a.name}{a.country?`, ${a.country}`:""}</span>
+   <button onClick={()=>{store.setWorld(a.ident);setOpen(false)}} data-testid={`from-${a.ident}`}>From</button>
+   <button onClick={()=>{store.setDestination(a.ident);setOpen(false)}} disabled={!hud.airport||a.ident===hud.airport} title={hud.airport?undefined:"Pick a real departure airport first"} data-testid={`to-${a.ident}`}>To</button>
+  </li>):<li className="k">No airport matches “{q}”.</li>}</ul>}
  </div>;
 }
 /** Where the aircraft is on Earth, the terrain under it, and what is streaming. */
@@ -101,8 +141,10 @@ export function GeoBadge({geo}:{geo:GeoStatus}){
   <span>MSL {m(p.altMsl)}</span> <span>AGL {m(geo.aglM)}</span> <span className="k wide">{state}</span>
   {geo.features.state!=="OFF"&&<span className="k wide" data-testid="geo-features">{geo.features.state==="UNAVAILABLE"?"buildings unavailable":geo.features.state==="LOADING"?"buildings…":`${geo.features.buildings.toLocaleString()} buildings`}{geo.surveyed?" · surveyed runway":""}</span>}
   {geo.runwayBelow&&<span data-testid="geo-runway">RWY {geo.runwayBelow}</span>}
+  {geo.route&&<span className="route" data-testid="geo-route">→ {geo.route.destination} {km(geo.route.distanceM)}{geo.route.etaS!==null?` · ETA ${eta(geo.route.etaS)}`:""} · {geo.route.phase}</span>}
  </div>;
 }
+const eta=(s:number)=>s>=3600?`${Math.floor(s/3600)} h ${Math.round((s%3600)/60)} min`:s>=60?`${Math.round(s/60)} min`:`${Math.round(s)} s`;
 export function Attribution({lines}:{lines:readonly string[]}){const text=lines.join(" · ");return <div className="attribution" title={text} data-testid="attribution">{text}</div>}
 const said=(i:string)=>i.replaceAll("_"," ").toLowerCase(),pc=(x:number)=>`${Math.round(x*100)}%`;
 /** The Jev copilot: what it recommends now, who decided (Jev, or XGBoost when Jev was unsure), and its health. */
@@ -115,6 +157,19 @@ function Copilot({hud}:{hud:HudState}){
    :<p className="k" data-testid="copilot-advice">{hud.started?"Waiting for a recommendation…":"Recommends once the flight starts."}</p>}
   {s?.jev==="ERROR"&&s.detail&&<p className="problem" data-testid="jev-error">{s.detail}</p>}
   <p className="k" data-testid="xgb-status">XGBoost: {x?.trained?`trained on ${x.examples} examples (${x.version})`:x?.detail??"waiting for a finished flight"}</p>
+ </div>;
+}
+/** Google Photorealistic 3D Tiles over real airports: a Maps Platform key (Map Tiles API), kept only in this browser. */
+function Tiles3DKey({hud,store}:{hud:HudState;store:SimStore}){
+ const [key,setKey]=useState(""),[problem,setProblem]=useState<string>();
+ return <div className="tiles3d" data-testid="tiles3d-key">
+  {hud.tiles3dKeyHint?<div className="row"><span>3D Tiles key <code>{hud.tiles3dKeyHint}</code></span><button onClick={()=>store.removeTiles3dKey()} data-testid="tiles3d-remove">Remove</button></div>
+   :<form className="row" onSubmit={e=>{e.preventDefault();const p=store.saveTiles3dKey(key);setProblem(p);if(!p)setKey("")}}>
+    <label htmlFor="tiles3d-key" className="sr">Google Maps API key for 3D Tiles</label>
+    <input id="tiles3d-key" type="password" value={key} onChange={e=>{setKey(e.target.value);setProblem(undefined)}} placeholder="Google 3D Tiles key (optional)" autoComplete="off" spellCheck={false} data-testid="tiles3d-input"/>
+    <button type="submit" disabled={!key.trim()} data-testid="tiles3d-save">Save</button></form>}
+  {problem&&<p className="problem" role="alert">{problem}</p>}
+  <p className="k">Photorealistic 3D Tiles over real airports (Map Tiles API; usage is billed to the key). Display only.</p>
  </div>;
 }
 /** Jev key entry/removal and the learning kept in this browser. */
@@ -140,6 +195,7 @@ export function AiPanel({hud,store,onClose}:{hud:HudState;store:SimStore;onClose
   {hud.insight&&<p className="insight" data-testid="insight">Best known here: <b>{hud.insight.action.replaceAll("_"," ").toLowerCase()}</b> · landed {Math.round(hud.insight.successRate*100)}% of {hud.insight.visits}
    <span className="k"> ({[hud.insight.manual&&`${hud.insight.manual} manual`,hud.insight.autopilot&&`${hud.insight.autopilot} autopilot`].filter(Boolean).join(", ")})</span></p>}
   {on&&<Copilot hud={hud}/>}
+  <Tiles3DKey hud={hud} store={store}/>
   <div className="row traces" data-testid="traces">
    <span title="Recent flights as Control Room telemetry">Traces: <b>{hud.traces.flights}</b> <span className="k">({hud.traces.manual} manual, {hud.traces.autopilot} autopilot)</span></span>
    <button onClick={()=>store.downloadTraces()} disabled={!hud.traces.flights} data-testid="traces-download" title="JSONL for the Control Room replay">Download</button>
@@ -159,7 +215,8 @@ export function Help({onClose}:{onClose:()=>void}){
   <p><kbd>A</kbd> autopilot on/off — the autopilot takes off, flies through the gate and lands. It needs a Jev key (open <b>Jev &amp; learning</b>), which also turns on learning: every finished flight is remembered in this browser.</p>
   <p>Manual (any flight input disengages the autopilot): <kbd>W</kbd>/<kbd>↑</kbd> climb · <kbd>S</kbd>/<kbd>↓</kbd> descend · <kbd>←</kbd>/<kbd>Q</kbd> left · <kbd>→</kbd>/<kbd>E</kbd> right · <kbd>Shift</kbd> slow · <kbd>X</kbd> abort. On touch screens use the on-screen pad.</p>
   <p><kbd>C</kbd> cycle camera · <kbd>1</kbd>–<kbd>4</kbd> chase / cockpit / orbit (drag) / tower · <kbd>P</kbd> or <kbd>Space</kbd> pause · <kbd>+</kbd>/<kbd>-</kbd> time rate · <kbd>R</kbd> restart · <kbd>N</kbd> new scenario · <kbd>I</kbd> instruments · <kbd>L</kbd> Learning Lab (new tab) · <kbd>H</kbd> help</p>
-  <p><b>Real world:</b> on the start card pick <b>From</b> an airport and runway (or add <code>?airport=VNKT&amp;runway=02</code> to the URL). Real terrain, buildings and airport runways stream in around and ahead of the aircraft; the runway is placed from surveyed data when available. The airfield itself stays flat; beyond it, flying into terrain or a building is a crash, and a gentle touchdown on a real runway is a landing.</p>
+  <p><b>Real world:</b> on the start card pick <b>From</b> an airport and runway, or search any of the world's airports (or add <code>?airport=VNKT&amp;runway=02</code> to the URL).
+  Choose a search result's <b>To</b> for a cross-country flight (<code>&amp;to=VOBL</code>): the autopilot takes off, follows the great circle at a safe altitude over the terrain, and lands on the destination runway. <kbd>+</kbd> goes up to ×32 for long legs. Real terrain, buildings and airport runways stream in around and ahead of the aircraft; the runway is placed from surveyed data when available. The airfield itself stays flat; beyond it, flying into terrain or a building is a crash, and a gentle touchdown on a real runway is a landing.</p>
   <p className="k">Fly through the orange gate, then land back on runway 18. The balloon is the moving obstacle.</p>
   <button onClick={onClose}>Close</button>
  </div></div>;

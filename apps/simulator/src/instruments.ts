@@ -7,10 +7,11 @@ import type {WorldSnapshot} from "@flight/protocol";
 export interface FlightData{speedKt:number;altFt:number;vsFpm:number;pitch:number;roll:number;headingDeg:number;turnRateDegS:number}
 const KT=1.94384,FT=3.28084;
 const TAU=Math.PI*2,rad=(d:number)=>d*Math.PI/180;
-export function flightData(w:WorldSnapshot,prevHeading:number|undefined,dtSeconds:number):FlightData{
+/** With `geo` (a real-world flight) heading is true heading and altitude is above mean sea level. */
+export function flightData(w:WorldSnapshot,prevHeading:number|undefined,dtSeconds:number,geo?:{trackDeg:number;position:{altMsl:number}}):FlightData{
  const a=w.aircraft,speed=Math.hypot(a.velocity.x,a.velocity.y,a.velocity.z);
  const hd=((a.heading%TAU)+TAU)%TAU;
- return {speedKt:speed*KT,altFt:a.position.y*FT,vsFpm:a.velocity.y*FT*60,pitch:a.pitch,roll:a.roll,headingDeg:hd*180/Math.PI,
+ return {speedKt:speed*KT,altFt:(geo?geo.position.altMsl:a.position.y)*FT,vsFpm:a.velocity.y*FT*60,pitch:a.pitch,roll:a.roll,headingDeg:geo?((geo.trackDeg%360)+360)%360:hd*180/Math.PI,
   turnRateDegS:prevHeading===undefined||dtSeconds<=0?0:(a.heading-prevHeading)/dtSeconds*180/Math.PI};
 }
 function bezel(g:CanvasRenderingContext2D,cx:number,cy:number,r:number){
@@ -91,22 +92,30 @@ export class MiniMap{
  #g:CanvasRenderingContext2D;#trail:{x:number;z:number}[]=[];
  constructor(readonly canvas:HTMLCanvasElement){this.#g=canvas.getContext("2d")!}
  reset(){this.#trail=[]}
- draw(w:WorldSnapshot){
+ /** With a route (cross-country flight) the map follows the aircraft over ~30 km and draws the route and destination. */
+ /** `northDeg`: true bearing of the map's "up" (the local frame's +z), so the north arrow points at true north. */
+ draw(w:WorldSnapshot,route?:{path:readonly (readonly [number,number,number])[];destination:string},northDeg=0){
   const c=this.canvas,dpr=Math.min(2,window.devicePixelRatio||1),W=c.clientWidth,H=c.clientHeight;if(!W||!H)return;
   if(c.width!==Math.round(W*dpr)){c.width=Math.round(W*dpr);c.height=Math.round(H*dpr)}
   const g=this.#g;g.setTransform(dpr,0,0,dpr,0,0);const a=w.aircraft.position;
   const last=this.#trail.at(-1);if(!last||Math.hypot(last.x-a.x,last.z-a.z)>6){this.#trail.push({x:a.x,z:a.z});if(this.#trail.length>600)this.#trail.shift()}
-  const pts=[{x:0,z:-320},{x:0,z:520},...w.entities.map(e=>({x:e.position.x,z:e.position.z})),{x:a.x,z:a.z}];
+  const path=route?.path.map(p=>({x:-p[0],z:p[2]}));
+  const pts=path?[{x:a.x-15_000,z:a.z-15_000},{x:a.x+15_000,z:a.z+15_000}]:[{x:0,z:-320},{x:0,z:520},...w.entities.map(e=>({x:e.position.x,z:e.position.z})),{x:a.x,z:a.z}];
   const minX=Math.min(...pts.map(p=>p.x))-120,maxX=Math.max(...pts.map(p=>p.x))+120,minZ=Math.min(...pts.map(p=>p.z))-120,maxZ=Math.max(...pts.map(p=>p.z))+120;
   const s=Math.min(W/(maxX-minX),H/(maxZ-minZ)),cx=(minX+maxX)/2,cz=(minZ+maxZ)/2;
   const P=(x:number,z:number)=>[W/2+(x-cx)*s,H/2-(z-cz)*s] as const;
   g.fillStyle="rgba(28,44,30,.92)";g.fillRect(0,0,W,H);
-  g.strokeStyle="rgba(255,255,255,.07)";g.lineWidth=1;const grid=200;for(let x=Math.ceil(minX/grid)*grid;x<maxX;x+=grid){const [px]=P(x,0);g.beginPath();g.moveTo(px,0);g.lineTo(px,H);g.stroke()}for(let z=Math.ceil(minZ/grid)*grid;z<maxZ;z+=grid){const [,pz]=P(0,z);g.beginPath();g.moveTo(0,pz);g.lineTo(W,pz);g.stroke()}
+  g.strokeStyle="rgba(255,255,255,.07)";g.lineWidth=1;const grid=path?5000:200;for(let x=Math.ceil(minX/grid)*grid;x<maxX;x+=grid){const [px]=P(x,0);g.beginPath();g.moveTo(px,0);g.lineTo(px,H);g.stroke()}for(let z=Math.ceil(minZ/grid)*grid;z<maxZ;z+=grid){const [,pz]=P(0,z);g.beginPath();g.moveTo(0,pz);g.lineTo(W,pz);g.stroke()}
   const [r1x,r1z]=P(-15,520),[r2x,r2z]=P(15,-320);g.fillStyle="#555a61";g.fillRect(Math.min(r1x,r2x),Math.min(r1z,r2z),Math.max(3,Math.abs(r2x-r1x)),Math.abs(r2z-r1z));
-  g.strokeStyle="rgba(255,255,255,.75)";g.setLineDash([4,4]);g.beginPath();this.#trail.forEach((p,i)=>{const [x,y]=P(p.x,p.z);i?g.lineTo(x,y):g.moveTo(x,y)});g.stroke();g.setLineDash([]);
+  if(path){g.strokeStyle="#ff4fd8";g.lineWidth=2;g.beginPath();path.forEach((p,i)=>{const [x,y]=P(p.x,p.z);i?g.lineTo(x,y):g.moveTo(x,y)});g.stroke();
+   const end=path.at(-1)!,[dx,dy]=P(end.x,end.z),inside=dx>=0&&dx<=W&&dy>=0&&dy<=H;g.fillStyle="#40e080";
+   if(inside){g.beginPath();g.arc(dx,dy,5,0,TAU);g.fill()}
+   g.font="bold 11px system-ui";g.fillText(`→ ${route!.destination}`,6,H-8)}
+  g.strokeStyle="rgba(255,255,255,.75)";g.lineWidth=1;g.setLineDash([4,4]);g.beginPath();this.#trail.forEach((p,i)=>{const [x,y]=P(p.x,p.z);i?g.lineTo(x,y):g.moveTo(x,y)});g.stroke();g.setLineDash([]);
   for(const e of w.entities){const [x,y]=P(e.position.x,e.position.z);if(e.kind==="CHECKPOINT"){g.strokeStyle=w.objective.checkpointReached?"#30e070":"#ffb020";g.lineWidth=2.5;g.beginPath();g.arc(x,y,Math.max(5,e.radius*s),0,TAU);g.stroke()}
    else if(e.kind==="OBSTACLE"){g.fillStyle="#ff4d4d";g.beginPath();g.arc(x,y,Math.max(4,e.radius*s),0,TAU);g.fill()}}
   const [ax,ay]=P(a.x,a.z);g.save();g.translate(ax,ay);g.rotate(w.aircraft.heading);g.fillStyle="#fff";g.strokeStyle="#000";g.lineWidth=1;g.beginPath();g.moveTo(0,-9);g.lineTo(6,7);g.lineTo(0,4);g.lineTo(-6,7);g.closePath();g.fill();g.stroke();g.restore();
-  g.fillStyle="#e8e8e8";g.font="bold 11px system-ui";g.fillText("N ▲",W-30,14);
+  g.save();g.translate(W-16,16);g.rotate(-northDeg*Math.PI/180);g.fillStyle="#e8e8e8";g.font="bold 10px system-ui";g.textAlign="center";
+  g.beginPath();g.moveTo(0,-9);g.lineTo(4,-1);g.lineTo(-4,-1);g.closePath();g.fill();g.fillText("N",0,9);g.restore();
  }
 }

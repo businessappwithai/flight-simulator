@@ -69,7 +69,7 @@ const SURFACE: Record<string, [number, number, number]> = { runway: [54, 56, 60]
 /** Runways and taxiways as strips along their centrelines, aprons and helipads as polygons, runway edge lights. */
 export function aerowaysMesh(v: VectorFeatures, ctx: MeshContext): FeaturePatch {
   const b = new Builder(centreOf(v, ctx));
-  const surfaceY = (x: number, z: number, lift: number) => (ctx.onAirfield(x, z) ? 0.03 + lift / 10 : ctx.terrainY(x, z) + 0.2 + lift);
+  const surfaceY = (x: number, z: number, lift: number) => ctx.terrainY(x, z) + (ctx.onAirfield(x, z) ? 0.03 + lift / 10 : 0.2 + lift);
   // Draw order by lift: aprons lowest, then taxiways, then runways, so overlaps do not flicker.
   const lift = { apron: 0, helipad: 0.02, taxiway: 0.04, runway: 0.08 } as const;
   for (const a of v.aeroways) {

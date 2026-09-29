@@ -9,7 +9,7 @@ const pct=(x:number)=>`${(x*100).toFixed(1)}%`;
 const Bar=({value}:{value:number})=><div className="bar"><i style={{width:`${Math.max(0,Math.min(100,value*100))}%`}}/></div>;
 function Header({v,store,fileRef}:{v:DashboardView;store:DashboardStore;fileRef:React.RefObject<HTMLInputElement|null>}){
  const badge=v.mode==="LIVE"?"● LIVE":`● REPLAY ${v.replay==="DONE"?"(end)":v.replay.toLowerCase()}`;
- const status=v.mode==="REPLAY"?`replay ${v.replayPosition.index}/${v.replayPosition.total} events · ${v.metrics.decisions} decisions`:v.metrics.decisions?`${v.metrics.decisions} decisions observed`:"waiting for telemetry";
+ const status=v.mode==="REPLAY"?`replay ${v.replayPosition.index}/${v.replayPosition.total} events · ${v.metrics.decisions} decisions`:v.metrics.decisions?`${v.metrics.decisions} decisions observed`:v.stream?"world stream live · no decisions yet":"waiting for telemetry";
  const download=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([store.exportJsonl()],{type:"application/x-ndjson"}));a.download="flight-world-telemetry.jsonl";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
  return <header className="header">
   <div className="title"><strong>Replay & Why</strong><span className={`badge ${v.mode}`} data-testid="mode">{badge}</span><span className="muted" data-testid="status">{status}</span></div>
@@ -44,6 +44,23 @@ function Tabs({v,onPick}:{v:DashboardView;onPick:(id:string)=>void}){
   {tab==="safety"&&<div data-testid="safety">{overridden.length?overridden.map(d=><div className="reason" key={d.decisionId}>{`${d.decisionId}: ${d.requested} → ${d.executed} (${d.safetyReason??"unspecified"})`}</div>):"No safety overrides observed."}</div>}
   {tab==="raw"&&<pre className="scroll">{v.selected?JSON.stringify({...v.selected,explanationIntegrity:explanationIntegrity(v.selected)},null,2):"—"}</pre>}
  </section>;
+}
+/** GeoTelemetry: what the deterministic world holds around the aircraft, the render stream, and the destination. */
+function WorldStream({v}:{v:DashboardView}){
+ const w=v.stream;if(!w)return null;const s=w.latest,p=s.physics,r=s.render,d=s.destination;
+ const spark=(k:"queued"|"missing"|"holds")=>{const xs=w.history.map(h=>h[k]),max=Math.max(1,...xs);return <svg className="spark" viewBox={`0 0 ${Math.max(1,xs.length-1)} 20`} preserveAspectRatio="none" aria-hidden="true"><polyline points={xs.map((x,i)=>`${i},${20-x/max*18}`).join(" ")}/></svg>};
+ const rows:[string,string,React.ReactNode?][]=[
+  ["Anchored",`${s.airport} · frame ${s.frameEpoch} · ${s.state}`],["Position",`${s.position.lat.toFixed(3)}°, ${s.position.lon.toFixed(3)}° · ${Math.round(s.position.altMsl*3.28084)} ft MSL`],
+  ["Physics tiles",`${p.terrainTiles} terrain · ${p.featureTiles} features (${s.features.toLowerCase()})`],
+  ["Missing under aircraft",String(p.missingAround),spark("missing")],["Clock holds",`${p.holds} · ${(p.holdMs/1000).toFixed(1)} s${p.holding?" · holding now":""}`,spark("holds")],
+  ["Render queue",`${r.queued} queued · ${r.inFlight} in flight · ${r.wanted} wanted`,spark("queued")],
+  ["Loads",`${r.loaded} loaded · ${r.failed} failed · ${r.aborted} aborted`],
+  ["Cache",`${r.cacheEntries} tiles · ${r.cacheMB} MB · ${r.evictions} evicted${r.hitRate!==null?` · hit ${pct(r.hitRate)}`:""}`],
+  ["Tile latency",r.latencyP50Ms===null?"—":`p50 ${r.latencyP50Ms} ms · p95 ${r.latencyP95Ms} ms`],
+  ...(d?[["Destination",`${d.ident} · ${d.distanceKm} km · terrain ${d.terrainReady?"ready":"loading"}${d.featuresReady===null?"":` · features ${d.featuresReady?"ready":"loading"}`}`] as [string,string]]:[]),
+  ...(p.manifest?[["Manifest",p.manifest.slice(0,16)+"…"] as [string,string]]:[])];
+ return <section className="card world-stream" data-testid="world-stream"><div className="strip-head"><span className="muted">World stream (GeoTelemetry) · tick {w.tick}</span></div>
+  <dl>{rows.map(([k,x,sp])=><div key={k}><dt className="muted">{k}</dt><dd>{x}{sp}</dd></div>)}</dl></section>;
 }
 function Advisors({d}:{d:DecisionWhy}){
  const bp=d.bestPractice,wm=d.worldModel;
@@ -98,6 +115,6 @@ function ReplayView({store}:{store:DashboardStore}){
   <input ref={file} type="file" accept=".jsonl,application/x-ndjson,application/json,text/plain" hidden data-testid="replay-file" onChange={async e=>{const f=e.target.files?.[0];e.target.value="";if(!f)return;try{store.loadReplay(await f.text())}catch(err){alert(`Could not read replay: ${(err as Error).message}`)}}}/>
   <Header v={v} store={store} fileRef={file}/>
   <div className="notices">{v.alerts.map(a=><div key={a.id} className={`card notice ${a.severity==="CRITICAL"?"bad":"warn"}`}>{`${a.severity}: ${a.message}`}</div>)}{v.findings.map(f=><div key={f.code} className={`card notice ${f.severity==="CRITICAL"?"bad":"warn"}`}>{`${f.code}: ${f.detail}`}</div>)}</div>
-  <div className="shell"><main><Metrics v={v}/><DecisionStrip v={v} onPick={pick}/><Tabs v={v} onPick={pick}/></main><WhyPanel v={v} panelRef={side}/></div>
+  <div className="shell"><main><Metrics v={v}/><WorldStream v={v}/><DecisionStrip v={v} onPick={pick}/><Tabs v={v} onPick={pick}/></main><WhyPanel v={v} panelRef={side}/></div>
  </>;
 }

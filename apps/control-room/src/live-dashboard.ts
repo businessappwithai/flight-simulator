@@ -1,4 +1,6 @@
-import type {RuntimeEvent} from "@flight/protocol";
+import type {RuntimeEvent,WorldStreamSample} from "@flight/protocol";
+/** GeoTelemetry of a real-world flight: the latest sample and a short history for trends. */
+export interface WorldStreamView{tick:string;latest:WorldStreamSample;history:readonly {tick:string;queued:number;inFlight:number;missing:number;holds:number;cacheMB:number}[]}
 import type {AdvisorEvidence,DecisionEvidence} from "@flight/protocol";
 export type Ranked=readonly {action:string;probability:number}[];
 export type Imagined=readonly {action:string;horizonSeconds:number;predictedRisk:number;uncertainty:number;predictedReward:number}[];
@@ -15,6 +17,7 @@ export interface DecisionWhy{
 export interface DashboardMetrics{decisions:number;overrides:number;overrideRate:number;episodes:number;providerDisagreements:number;meanConfidence:number}
 const pct=(x:number)=>`${(x*100).toFixed(1)}%`;
 export class LiveDashboardModel{
+ #stream:{tick:string;s:WorldStreamSample}[]=[];
  #decisions=new Map<string,DecisionWhy>();#order:string[]=[];#episodes=0;#overrides=0;#disagreements=0;#confidence=0;
  ingest(e:RuntimeEvent){
   if(e.type==="DECISION"){
@@ -29,7 +32,10 @@ export class LiveDashboardModel{
   } else if(e.type==="SAFETY_OVERRIDE"){this.#overrides++;const d=this.#decisions.get(e.decisionId);if(d){d.executed=e.executed;d.safetyReason=e.reason}}
   else if(e.type==="OUTCOME"){const d=this.#decisions.get(e.decisionId);if(d)d.outcomes[e.horizon]=e.reward}
   else if(e.type==="EPISODE_END")this.#episodes++;
+  else if(e.type==="WORLD_STREAM"&&e.stream&&typeof e.stream==="object"){this.#stream.push({tick:String(e.tick),s:e.stream});if(this.#stream.length>120)this.#stream.shift()}
  }
+ worldStream():WorldStreamView|undefined{const l=this.#stream.at(-1);if(!l)return undefined;
+  return {tick:l.tick,latest:l.s,history:this.#stream.map(({tick,s})=>({tick,queued:s.render?.queued??0,inFlight:s.render?.inFlight??0,missing:s.physics?.missingAround??0,holds:s.physics?.holds??0,cacheMB:s.render?.cacheMB??0}))}}
  latest(){const id=this.#order.at(-1);return id?this.#decisions.get(id):undefined}
  decisions(limit=200){return this.#order.slice(-limit).reverse().map(id=>this.#decisions.get(id)!).filter(Boolean)}
  metrics():DashboardMetrics{const n=this.#order.length;return{decisions:n,overrides:this.#overrides,overrideRate:n?this.#overrides/n:0,episodes:this.#episodes,providerDisagreements:this.#disagreements,meanConfidence:n?this.#confidence/n:0}}

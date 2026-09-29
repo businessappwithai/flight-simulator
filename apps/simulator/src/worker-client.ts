@@ -7,7 +7,7 @@ export type WorldEvent=Extract<SimEvent,{type:"WORLD"}>;
 export class SimulationWorkerClient{
  readonly worker:Worker;latest?:WorldEvent;checksum?:string;ready=false;
  #seq=0;#inFlight=false;#listeners=new Set<(e:SimEvent)=>void>();
- onError:(message:string)=>void=()=>{};
+ onError:(message:string,command?:string)=>void=()=>{};
  // Served next to the page by serve.ts / build.ts (bundlers do not rewrite worker URLs reliably).
  constructor(url=new URL("./sim.worker.js",document.baseURI)){
   this.worker=new Worker(url,{type:"module"});
@@ -15,7 +15,7 @@ export class SimulationWorkerClient{
    if(e.type==="READY")this.ready=true;
    if(e.type==="WORLD"){this.latest=e;if(e.seq===this.#seq)this.#inFlight=false}
    if(e.type==="CHECKSUM")this.checksum=e.checksum;
-   if(e.type==="ERROR"){this.#inFlight=false;this.onError(e.message)}
+   if(e.type==="ERROR"){this.#inFlight=false;this.onError(e.message,e.command)}
    for(const l of this.#listeners)l(e)};
   this.worker.onerror=(e:ErrorEvent)=>{this.#inFlight=false;this.onError(`simulation worker crashed: ${e.message}`)};
  }

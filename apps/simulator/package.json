@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "3d-tiles-renderer": "^0.5.3",
     "@react-three/fiber": "^9.8.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "three": "^0.180.0"
+    "three": "^0.180.0",
+    "three-mesh-bvh": "^0.9"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

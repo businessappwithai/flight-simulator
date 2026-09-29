@@ -130,7 +130,7 @@ export class DeterministicSimulation {
     const horizontal = Math.cos(pitch) * speed;
     const groundHere = this.#ground ? this.#ground(this.#aircraft.position.x, this.#aircraft.position.z) : 0;
     const vy = Math.sin(pitch) * speed - (speed < 12 && this.#aircraft.position.y > groundHere ? 4 : 0);
-    const velocity = {
+    let velocity = {
       x: Math.sin(heading) * horizontal,
       y: vy,
       z: Math.cos(heading) * horizontal
@@ -149,6 +149,9 @@ export class DeterministicSimulation {
       if (Math.abs(velocity.y) > 8 || Math.abs(roll) > 0.35 || (this.#ground && ground !== 0 && !this.#landable?.(position.x, position.z))) crashed = true;
       position = { ...position, y: ground };
       grounded = true;
+      // On real terrain (anything but the flat y = 0 airfield, whose behaviour and checksums stay as they were) the
+      // wheels follow the surface: no sink rate is carried into the next tick, so a sloping runway can be rolled to a stop.
+      if (!crashed && this.#ground && ground !== 0 && velocity.y < 0) velocity = { ...velocity, y: 0 };
     }
 
     this.#entities = this.#entities.map(e => e.kind !== "OBSTACLE" ? e : ({

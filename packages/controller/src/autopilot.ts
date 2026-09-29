@@ -8,7 +8,11 @@ export interface AutopilotTuning{cruiseSpeed:number;approachSpeed:number;glideSl
 export const DEFAULT_AUTOPILOT:AutopilotTuning={cruiseSpeed:42,approachSpeed:26,glideSlopeDeg:4,touchdownOffset:6};
 const clamp=(x:number,a:number,b:number)=>Math.max(a,Math.min(b,x));
 const wrap=(a:number)=>{while(a>Math.PI)a-=2*Math.PI;while(a<-Math.PI)a+=2*Math.PI;return a};
-export interface AutopilotTarget{mode:"TAKEOFF"|"OUTBOUND"|"TURN_BACK"|"FINAL"|"FLARE"|"ROLLOUT";heading:number;altitude:number;speed:number;maxBank:number}
+export interface AutopilotTarget{mode:"TAKEOFF"|"OUTBOUND"|"TURN_BACK"|"CLIMB"|"CRUISE"|"DESCENT"|"FINAL"|"FLARE"|"ROLLOUT";heading:number;altitude:number;speed:number;maxBank:number;
+ /** Glide-path angle for FINAL feed-forward (default: the tuning's). */
+ glideSlopeDeg?:number;
+ /** Height above the surface below (for FLARE/ROLLOUT when the ground is not at y = 0). */
+ heightAboveGround?:number}
 export function autopilotTarget(w:WorldSnapshot,t:AutopilotTuning=DEFAULT_AUTOPILOT):AutopilotTarget{
  const a=w.aircraft,p=a.position,speed=Math.hypot(a.velocity.x,a.velocity.y,a.velocity.z);
  const runway=w.entities.find(e=>e.kind==="RUNWAY")?.position??{x:0,y:0,z:0};
@@ -47,8 +51,15 @@ export function autopilotIntent(w:WorldSnapshot,t:AutopilotTuning=DEFAULT_AUTOPI
  const climb=target.altitude-a.position.y;
  return climb>5?"CLIMB":climb<-5?"DESCEND":"HOLD";
 }
-export function autopilotControls(w:WorldSnapshot,t:AutopilotTuning=DEFAULT_AUTOPILOT):AircraftControls{
- const a=w.aircraft,p=a.position,speed=Math.hypot(a.velocity.x,a.velocity.y,a.velocity.z),target=autopilotTarget(w,t);
+export function autopilotControls(w:WorldSnapshot,t:AutopilotTuning=DEFAULT_AUTOPILOT):AircraftControls{return steerTo(w,autopilotTarget(w,t),t)}
+/**
+ * The autopilot's control law: fly a target heading/altitude/speed, with the mode deciding take-off, glide-path
+ * feed-forward, flare and roll-out. Shared by the mission autopilot and the route autopilot (`routeTarget` in
+ * @flight/geospatial). Pure function of the snapshot and target.
+ */
+export function steerTo(w:WorldSnapshot,target:AutopilotTarget,t:AutopilotTuning=DEFAULT_AUTOPILOT):AircraftControls{
+ const a=w.aircraft,p=a.position,speed=Math.hypot(a.velocity.x,a.velocity.y,a.velocity.z);
+ const h=target.heightAboveGround??p.y;
  let altitude=target.altitude,heading=target.heading;
  // Obstacle avoidance on the predicted closest approach over the next 6 s: climb over it and steer away from it.
  const o=w.entities.find(e=>e.kind==="OBSTACLE");
@@ -63,15 +74,27 @@ export function autopilotControls(w:WorldSnapshot,t:AutopilotTuning=DEFAULT_AUTO
    heading=a.heading+side*clamp(.9*(1-miss/(guard*1.6))+.2,0,.8);
   }
  }
- const rollTarget=clamp(1.3*wrap(heading-a.heading),-Math.max(target.maxBank,heading!==target.heading&&p.y>10?.6:0),Math.max(target.maxBank,heading!==target.heading&&p.y>10?.6:0));
+ const rollTarget=clamp(1.3*wrap(heading-a.heading),-Math.max(target.maxBank,heading!==target.heading&&h>10?.6:0),Math.max(target.maxBank,heading!==target.heading&&h>10?.6:0));
  const aileron=clamp(3*(rollTarget-a.roll),-1,1);
  let vyTarget=clamp(.45*(altitude-p.y),-5,6);
  // On final add the glide path's own sink rate as feed-forward so the aircraft tracks it without a standing offset.
- if(target.mode==="FINAL"&&altitude===target.altitude)vyTarget=clamp(-Math.hypot(a.velocity.x,a.velocity.z)*Math.tan(t.glideSlopeDeg*Math.PI/180)+.45*(altitude-p.y),-4,3);
+ if(target.mode==="FINAL"&&altitude===target.altitude)vyTarget=clamp(-Math.hypot(a.velocity.x,a.velocity.z)*Math.tan((target.glideSlopeDeg??t.glideSlopeDeg)*Math.PI/180)+.45*(altitude-p.y),-4,3);
  if(target.mode==="FLARE")vyTarget=-1.2;
- const canPitchUp=speed>18||p.y>6;
- const pitchTarget=target.mode==="ROLLOUT"?0:clamp(Math.asin(clamp(vyTarget/Math.max(speed,1),-.4,.4)),canPitchUp?-.3:-.3,canPitchUp?.3:0);
+ const canPitchUp=speed>18||h>6;
+ // Rolling out on sloping real terrain (heightAboveGround given): nose slightly down keeps the wheels on the runway.
+ const rollout=target.heightAboveGround!==undefined&&h>.05?-.06:0;
+ const pitchTarget=target.mode==="ROLLOUT"?rollout:clamp(Math.asin(clamp(vyTarget/Math.max(speed,1),-.4,.4)),canPitchUp?-.3:-.3,canPitchUp?.3:0);
  const elevator=clamp(4*(pitchTarget-a.pitch),-1,1);
  const throttle=target.mode==="ROLLOUT"?0:clamp(target.speed*.1/34+.08*(target.speed-speed)+(vyTarget>1?.1:0),0,1);
  return {aileron,elevator,rudder:aileron*.15,throttle};
+}
+/** Pilot-intent description of any autopilot target (mission or route), for learning and traces. */
+export function targetIntent(w:WorldSnapshot,target:AutopilotTarget):PilotIntent{
+ const a=w.aircraft;
+ if(target.mode==="FLARE"||target.mode==="ROLLOUT")return "SLOW";
+ if(target.mode==="TAKEOFF")return "CLIMB";
+ const turn=wrap(target.heading-a.heading);
+ if(Math.abs(turn)>.15)return turn>0?"TURN_RIGHT":"TURN_LEFT";
+ const climb=target.altitude-a.position.y;
+ return climb>5?"CLIMB":climb<-5?"DESCEND":"HOLD";
 }

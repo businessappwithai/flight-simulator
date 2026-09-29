@@ -2,13 +2,25 @@ import * as THREE from "three";
 import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
 import {sceneryHeight,toThree} from "./scenery.ts";
 import {EXTERIOR_LAYER} from "./aircraft-model.ts";
+import type {TerrainProbe} from "./terrain-probe.ts";
 export const CAMERA_MODES=["CHASE","COCKPIT","ORBIT","TOWER"] as const;
 export type CameraMode=typeof CAMERA_MODES[number];
 /** Chase, cockpit, free orbit and tower views, switched like the default views in desktop flight simulators. */
 export class CameraRig{
  readonly orbit:OrbitControls;mode:CameraMode="CHASE";
  #chasePos=new THREE.Vector3();#lookAt=new THREE.Vector3();#initialised=false;
- #tower=toThree(-138,34,-30); // on the cab balcony, outside the tower geometry
+ #tower=toThree(-138,34,-30); // on the cab balcony, outside the tower geometry (airfield coordinates)
+ /**
+  * Real-world surfaces (terrain, buildings, the airfield) for keeping the camera clear of them; without one the
+  * procedural scenery's height function is used. `airfield` places the tower wherever the home airfield now is.
+  */
+ probe?:TerrainProbe;airfield?:THREE.Object3D;
+ #ground(x:number,z:number){return this.probe?this.probe.heightAt(x,z)??-Infinity:sceneryHeight(-x,z)}
+ /** Keeps a camera position out of the ground and, when a line-of-sight target is given, in front of anything hiding it. */
+ #clear(pos:THREE.Vector3,target?:THREE.Vector3){
+  if(target&&this.probe){const hit=this.probe.firstHit(target,pos);if(hit)pos.copy(hit).addScaledVector(pos.clone().sub(target).normalize(),-1.5)}
+  pos.y=Math.max(pos.y,this.#ground(pos.x,pos.z)+1.2);
+ }
  /** Drives the given camera (in R3F: the Canvas default camera). */
  constructor(readonly camera:THREE.PerspectiveCamera,dom:HTMLElement){this.camera.layers.enable(EXTERIOR_LAYER);this.orbit=new OrbitControls(this.camera,dom);this.orbit.enabled=false;this.orbit.enableDamping=true;this.orbit.minDistance=12;this.orbit.maxDistance=900}
  set(mode:CameraMode,aircraft:THREE.Object3D){
@@ -29,14 +41,15 @@ export class CameraRig{
    this.#chasePos.lerp(want,k);this.#lookAt.lerp(look,Math.min(1,k*1.5));
    // Never let smoothing lose the aircraft (slow frames, time acceleration): cap the lag.
    if(this.#chasePos.distanceTo(want)>18)this.#chasePos.sub(want).setLength(18).add(want);if(this.#lookAt.distanceTo(look)>12)this.#lookAt.sub(look).setLength(12).add(look);
-   this.#chasePos.y=Math.max(this.#chasePos.y,sceneryHeight(-this.#chasePos.x,this.#chasePos.z)+1.2);
+   this.#clear(this.#chasePos,aircraft.position);
    this.camera.position.copy(this.#chasePos);this.camera.up.set(0,1,0);this.camera.lookAt(this.#lookAt);
   }else if(this.mode==="COCKPIT"){
    eye.getWorldPosition(this.camera.position);const q=new THREE.Quaternion();aircraft.getWorldQuaternion(q);
    this.camera.quaternion.copy(q).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-.06,Math.PI,0)));
   }else if(this.mode==="ORBIT"){
    const delta=aircraft.position.clone().sub(this.orbit.target);this.orbit.target.add(delta);this.camera.position.add(delta);this.orbit.update();
-  }else{this.camera.position.copy(this.#tower);this.camera.up.set(0,1,0);this.camera.lookAt(aircraft.position);
+   const p=this.camera.position.clone();this.#clear(p);if(p.y!==this.camera.position.y){this.camera.position.copy(p);this.camera.lookAt(this.orbit.target)}
+  }else{this.camera.position.copy(this.airfield?this.airfield.localToWorld(this.#tower.clone()):this.#tower);this.camera.up.set(0,1,0);this.camera.lookAt(aircraft.position);
    const d=this.camera.position.distanceTo(aircraft.position);this.camera.fov=THREE.MathUtils.clamp(2*Math.atan(40/Math.max(d,1))*180/Math.PI,4,50);this.camera.updateProjectionMatrix()}
  }
 }
