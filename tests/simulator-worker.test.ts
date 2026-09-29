@@ -1,23 +1,67 @@
 import {expect,test} from "bun:test";
 import {DeterministicSimulation,defaultScenario,scenarioForSeed} from "@flight/simulation";
-import {autopilotControls} from "@flight/controller";
+import type {Observation,PilotIntent} from "@flight/protocol";
+import {decisionPilot,standInPolicy,serveStandInJev,type StandInJev} from "./jev-stand-in.ts";
 function worker(){const w=new Worker(new URL("../apps/simulator/src/sim.worker.ts",import.meta.url).href,{type:"module"});const inbox:any[]=[];w.onmessage=e=>inbox.push(e.data);
  const next=async(type:string,from=0)=>{for(let i=0;i<400;i++){const hit=inbox.slice(from).find(x=>x.type===type);if(hit)return hit;await Bun.sleep(5)}throw new Error(`no ${type}`)};return {w,inbox,next}}
 /** Waits (up to 5 s) for a condition on the worker's messages; the worker may still be loading its airport catalogue. */
 async function until(ok:()=>boolean){for(let i=0;i<500&&!ok();i++)await Bun.sleep(10)}
-async function fly(scenario:"default"|"seeded",seed:string){
+/** Jev for the worker: a stand-in Jev service on localhost (SET_JEV with its base URL). */
+const jevOn=(w:Worker,jev:StandInJev)=>w.postMessage({type:"SET_JEV",apiKey:"test-key",baseUrl:jev.url});
+/** The WORLD that answers STEP `seq` (other WORLD events, e.g. from tile loads, may arrive in between). */
+async function reply(inbox:any[],seq:number,from:number){for(let i=0;i<4000;i++){const hit=inbox.slice(from).find(x=>x.type==="WORLD"&&x.seq===seq);if(hit)return hit;await Bun.sleep(i<50?0:2)}throw new Error(`no WORLD for STEP ${seq}`)}
+let stepSeq=0;
+/** Steps the worker (up to 240 ticks a STEP) until `stop`, the flight ends, or exactly `maxTick`. `each` sees every reply. */
+async function stepUntil(w:Worker,inbox:any[],_next:unknown,maxTick:bigint,stop:(e:any)=>boolean=()=>false,each:(e:any)=>void=()=>{}){
+ let last:any,tick=0n;
+ for(let i=0;i<60_000;i++){const from=inbox.length,left=maxTick-tick,seq=++stepSeq;w.postMessage({type:"STEP",ticks:Number(left<240n?left:240n),seq});last=await reply(inbox,seq,from);tick=last.world.tick;each(last);
+  if(last.geo?.holding||last.geo?.state==="LOADING"){await Bun.sleep(2);continue}
+  if(stop(last)||tick>=maxTick||last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
+ return last;
+}
+const checksumOf=async(w:Worker,inbox:any[],next:(t:string,f?:number)=>Promise<any>)=>{const from=inbox.length;w.postMessage({type:"STEP",ticks:0,seq:0});return (await next("CHECKSUM",from)).checksum as string};
+/**
+ * The same flight without the worker: intents from `decide` at the same ticks (every decisionTicks(intent)), flown by
+ * the intent controller, up to `ticks`. The worker's autopilot must match it bit for bit.
+ */
+async function direct(scenario:ReturnType<typeof defaultScenario>,ticks:bigint,decide:(o:Observation)=>PilotIntent=standInPolicy){
+ const sim=new DeterministicSimulation(),pilot=decisionPilot(undefined,decide);let w=sim.reset(scenario);
+ while(w.tick<ticks&&w.objective.phase!=="COMPLETE"&&w.objective.phase!=="FAILED")w=sim.step(pilot(w));
+ return {w,chk:await sim.checksum()};
+}
+async function flyJev(scenario:"default"|"seeded",seed:string,jev:StandInJev,ticks:bigint,learning=false){
  const {w,inbox,next}=worker();try{
-  w.postMessage({type:"RESET",seed,scenario});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});await next("WORLD");
-  let seq=0,last:any;for(let i=0;i<200;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);expect(last.seq).toBe(seq);if(last.world.objective.phase!=="OUTBOUND"&&last.world.objective.phase!=="RETURN")break}
-  const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);return {last,chk};
+  jevOn(w,jev);w.postMessage({type:"RESET",seed,scenario});if(learning)w.postMessage({type:"SET_LEARNING",enabled:true});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});await next("WORLD");
+  const last=await stepUntil(w,inbox,next,ticks);return {last,chk:await checksumOf(w,inbox,next),inbox};
  }finally{w.terminate()}
 }
-async function direct(scenario:ReturnType<typeof defaultScenario>){const sim=new DeterministicSimulation();let w=sim.reset(scenario);for(let i=0;i<120*300;i++){w=sim.step(autopilotControls(w));if(w.objective.phase==="COMPLETE"||w.objective.phase==="FAILED")break}return {w,chk:await sim.checksum()}}
-test("worker autopilot lands and matches a direct deterministic run bit for bit",async()=>{
- const {last,chk}=await fly("default","1"),ref=await direct(defaultScenario(1n));
- expect(last.world.objective.phase).toBe("COMPLETE");expect(last.autopilotMode).toBe("LANDED");expect(last.world.tick).toBe(ref.w.tick);expect(chk.checksum).toBe(ref.chk);
+test("the autopilot flies Jev's decisions: the same flight as those intents flown directly, however slowly Jev answers",async()=>{
+ const fast=await serveStandInJev(),slow=await serveStandInJev({delayMs:()=>Math.floor(Math.random()*25)});
+ try{
+  const a=await flyJev("default","1",fast,3600n,true),b=await flyJev("default","1",slow,3600n),ref=await direct(defaultScenario(1n),3600n);
+  expect(a.last.world.tick).toBe(3600n);expect(a.last.pilot).toBe("AUTOPILOT");expect(a.chk).toBe(ref.chk);expect(b.chk).toBe(ref.chk);
+  expect(a.last.world.objective.phase).toBe("RETURN"); // the (stand-in) Jev's decisions took it through the gate
+  expect(fast.calls).toBeGreaterThan(40);expect(fast.observations[0]).toMatchObject({objectivePhase:"OUTBOUND",altitude:2});
+  // Each decision is published with where it came from, and what was flown is what Jev asked for.
+  const decisions=a.inbox.filter(x=>x.type==="WORLD"&&x.copilot).map(x=>x.copilot);
+  expect(decisions.length).toBeGreaterThan(5);expect(decisions.every((d:any)=>d.source==="JEV"&&d.provider==="jev"&&d.flown===d.intent)).toBe(true);
+  expect(a.last.autopilotMode).toMatch(/^(DECIDING|(HOLD|CLIMB|DESCEND|TURN_LEFT|TURN_RIGHT|SLOW) · Jev)$/);
+ }finally{await fast.stop();await slow.stop()}
+},60_000);
+test("seeded scenario selection reaches the worker",async()=>{const jev=await serveStandInJev();try{
+ const {last,chk}=await flyJev("seeded","33",jev,1200n),ref=await direct(scenarioForSeed(33n),1200n);expect(last.scenarioId).toBe("seeded-33");expect(chk).toBe(ref.chk);
+}finally{await jev.stop()}},30_000);
+test("no built-in autopilot: it needs a Jev key, and when Jev cannot answer and nothing is learned it hands back the aircraft",async()=>{
+ const down=await serveStandInJev({fail:true}),{w,inbox,next}=worker();try{
+  w.postMessage({type:"RESET",seed:"1"});await next("WORLD");
+  let from=inbox.length;w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});expect((await next("ERROR",from)).message).toBe("the autopilot needs a Jev key");
+  jevOn(w,down);w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
+  from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:1});const held=await reply(inbox,1,from);expect(held.world.tick).toBe(0n);expect(held.autopilotMode).toBe("DECIDING");
+  const off=await next("AUTOPILOT_OFF",from);expect(off.reason).toMatch(/^Autopilot disconnected: Jev could not be reached \(HTTP 503.*nothing has been learned yet/);
+  from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:2});const manual=await reply(inbox,2,from);
+  expect(manual.pilot).toBe("MANUAL");expect(manual.intent).toBe("HOLD");expect(manual.world.tick).toBe(240n);expect(manual.copilotStatus).toMatchObject({jev:"ERROR"});
+ }finally{w.terminate();await down.stop()}
 },30_000);
-test("seeded scenario selection reaches the worker",async()=>{const {last,chk}=await fly("seeded","33"),ref=await direct(scenarioForSeed(33n));expect(last.scenarioId).toBe("seeded-33");expect(chk.checksum).toBe(ref.chk)},30_000);
 test("manual intents fly the aircraft and pause freezes time",async()=>{const {w,inbox,next}=worker();try{
  w.postMessage({type:"RESET",seed:"1"});await next("WORLD");w.postMessage({type:"SET_PILOT",pilot:"MANUAL"});w.postMessage({type:"SET_INTENT",intent:"CLIMB"});
  let from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:1});const a=await next("WORLD",from);expect(a.pilot).toBe("MANUAL");expect(a.intent).toBe("CLIMB");expect(a.world.aircraft.position.y).toBeGreaterThan(5);expect(a.world.aircraft.velocity.y).toBeGreaterThan(3);
@@ -28,22 +72,6 @@ test("bad commands are rejected with ERROR and do not break the worker",async()=
  await until(()=>inbox.filter(x=>x.type==="ERROR").length>=7);await Bun.sleep(50);expect(inbox.filter(x=>x.type==="ERROR")).toHaveLength(7);
  const from=inbox.length;w.postMessage({type:"STEP",ticks:1e9,seq:9});const ok=await next("WORLD",from);expect(ok.world.tick).toBe(240n);
 }finally{w.terminate()}});
-test("learning records a finished autopilot flight without changing the flight itself",async()=>{const {w,inbox,next}=worker();try{
- w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});w.postMessage({type:"SET_LEARNING",enabled:true});await next("WORLD");
- let seq=0,last:any;for(let i=0;i<200;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
- const learned=inbox.filter(x=>x.type==="LEARNING");expect(learned).toHaveLength(1);expect(learned[0].reason).toBe("RECORDED");
- expect(learned[0].book).toMatchObject({flights:1,landings:1,crashes:0});expect(Object.keys(learned[0].book.entries).length).toBeGreaterThan(3);
- // Autopilot flying is learned as pilot intents, credited to the autopilot.
- expect(Object.keys(learned[0].book.entries).every((k:string)=>/\|(HOLD|CLIMB|DESCEND|TURN_LEFT|TURN_RIGHT|SLOW)$/.test(k))).toBe(true);
- expect(learned[0].book).toMatchObject({autopilot:{flights:1,landings:1},manual:{flights:0}});
- // TRACE follows the final WORLD once the worker has awaited the checksum, so wait for it rather than racing it.
- await next("TRACE"); const traces=inbox.filter(x=>x.type==="TRACE");expect(traces).toHaveLength(1);expect(traces[0].trace).toMatchObject({outcome:"LANDED",pilots:["AUTOPILOT"]});
- const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);const ref=await direct(defaultScenario(1n));
- expect(chk.checksum).toBe(ref.chk);expect(inbox.filter(x=>x.type==="LEARNING")).toHaveLength(1);
- // The next flight starts from what was learned: the worker reports the best action for the runway situation.
- w.postMessage({type:"RESET",seed:"1",scenario:"default"});const f2=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:++seq});const again=await next("WORLD",f2);
- expect(again.learning).toBe(true);expect(again.insight).toMatchObject({action:"CLIMB",autopilot:1,manual:0});
-}finally{w.terminate()}},30_000);
 test("learning is off by default, loads saved books, rejects corrupt ones and can be cleared",async()=>{const {w,inbox,next}=worker();try{
  w.postMessage({type:"RESET",seed:"1"});const first=await next("WORLD");expect(first.learning).toBe(false);expect(first.insight).toBeUndefined();
  w.postMessage({type:"LOAD_LEARNING",book:{version:2,flights:2,landings:1,crashes:1,manual:{flights:1,landings:0,crashes:1},autopilot:{flights:1,landings:1,crashes:0},entries:{"X|HOLD":{visits:2,successes:1,failures:1,manual:1,autopilot:1}}}});
@@ -52,22 +80,24 @@ test("learning is off by default, loads saved books, rejects corrupt ones and ca
  from=inbox.length;w.postMessage({type:"CLEAR_LEARNING"});expect(await next("LEARNING",from)).toMatchObject({reason:"CLEARED",book:{flights:0,entries:{}}});
  from=inbox.length;w.postMessage({type:"SET_LEARNING",enabled:"yes"});expect((await next("ERROR",from)).message).toMatch(/invalid learning flag/);
 }finally{w.terminate()}});
-test("a flight flown manually then on autopilot teaches and traces both pilots",async()=>{const {w,inbox,next}=worker();try{
- w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_LEARNING",enabled:true});w.postMessage({type:"SET_PILOT",pilot:"MANUAL"});w.postMessage({type:"SET_INTENT",intent:"CLIMB"});await next("WORLD");
- let seq=0,last:any;for(let i=0;i<3;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from)} // 6 s of manual climb
- expect(last.pilot).toBe("MANUAL");w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
- for(let i=0;i<200;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
- expect(last.world.objective.phase).toBe("COMPLETE");await next("TRACE");
- const book=inbox.find(x=>x.type==="LEARNING").book;
- expect(book).toMatchObject({flights:1,landings:1,manual:{flights:1,landings:1},autopilot:{flights:1,landings:1}});
- const e=Object.values(book.entries) as any[];expect(e.some(x=>x.manual>0)).toBe(true);expect(e.some(x=>x.autopilot>0)).toBe(true);
- const trace=inbox.find(x=>x.type==="TRACE").trace,frames=trace.events.filter((x:any)=>x.type==="DECISION").map((x:any)=>x.frame);
- expect(trace).toMatchObject({outcome:"LANDED",pilots:["MANUAL","AUTOPILOT"]});
- expect(frames[0]).toMatchObject({provider:"manual",executedIntent:"CLIMB",startTick:0n,outcome:{terminal:{objective:1}}});
- expect(frames.some((f:any)=>f.provider==="autopilot")).toBe(true);
- const end=trace.events.at(-1);const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);
- expect(end).toMatchObject({type:"EPISODE_END",phase:"COMPLETE",checksum:chk.checksum});
-}finally{w.terminate()}},30_000);
+test("a flight flown manually then on autopilot records both pilots, with Jev's decisions as the autopilot's frames",async()=>{
+ const jev=await serveStandInJev(),{w,inbox,next}=worker();try{
+  jevOn(w,jev);w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_LEARNING",enabled:true});w.postMessage({type:"SET_PILOT",pilot:"MANUAL"});w.postMessage({type:"SET_INTENT",intent:"CLIMB"});await next("WORLD");
+  let seq=100,last:any;for(let i=0;i<3;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from)} // 6 s of manual climb
+  expect(last.pilot).toBe("MANUAL");w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
+  last=await stepUntil(w,inbox,next,3600n);expect(last.pilot).toBe("AUTOPILOT");
+  // The same flight directly: CLIMB for 720 ticks, then the stand-in's decisions.
+  const ref=await direct(defaultScenario(1n),3600n,o=>o.tick<720n?"CLIMB":standInPolicy(o));
+  expect(await checksumOf(w,inbox,next)).toBe(ref.chk);
+  const from=inbox.length;w.postMessage({type:"RESET",seed:"1",scenario:"default"});const trace=(await next("TRACE",from)).trace;
+  expect(trace).toMatchObject({outcome:"ABANDONED",pilots:["MANUAL","AUTOPILOT"]});
+  const frames=trace.events.filter((x:any)=>x.type==="DECISION").map((x:any)=>x.frame);
+  expect(frames[0]).toMatchObject({provider:"manual",executedIntent:"CLIMB",startTick:0n});
+  // Jev advised while the person flew (copilot: frames, flown CLIMB); on autopilot its decisions were flown (autopilot: frames).
+  const flown=frames.filter((f:any)=>f.id?.startsWith("autopilot:"));expect(flown.length).toBeGreaterThan(5);
+  expect(flown.every((f:any)=>f.provider==="jev"&&f.executedIntent===f.requestedIntent&&f.startTick>=720n)).toBe(true);
+ }finally{w.terminate();await jev.stop()}
+},60_000);
 test("a restarted manual flight leaves an ABANDONED trace but teaches nothing",async()=>{const {w,inbox,next}=worker();try{
  w.postMessage({type:"RESET",seed:"1"});w.postMessage({type:"SET_LEARNING",enabled:true});w.postMessage({type:"SET_PILOT",pilot:"MANUAL"});w.postMessage({type:"SET_INTENT",intent:"CLIMB"});await next("WORLD");
  let from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:1});await next("WORLD",from);w.postMessage({type:"SET_INTENT",intent:"TURN_LEFT"});
@@ -87,19 +117,21 @@ test("without learning (no Jev key) flights are neither learned nor traced",asyn
  const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:1});await next("WORLD",from);w.postMessage({type:"RESET",seed:"1"});await Bun.sleep(100);
  expect(inbox.some(x=>x.type==="TRACE"||x.type==="LEARNING")).toBe(false);
 }finally{w.terminate()}});
-test("the Jev copilot switches with SET_JEV and never changes the flight, even when Jev is unreachable",async()=>{const {w,inbox,next}=worker();try{
- w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});w.postMessage({type:"SET_LEARNING",enabled:true});await next("WORLD");
- let from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:"not-a-real-key-000"});
- // SET_LEARNING also publishes a WORLD that may still be in flight: wait for the one SET_JEV produced.
- let on:any;for(let i=0;i<400&&!on;i++){on=inbox.slice(from).find(x=>x.type==="WORLD"&&x.copilotStatus);if(!on)await Bun.sleep(5)}
- expect(on?.copilotStatus).toMatchObject({jev:"READY"});
- // An unreachable endpoint (the key goes nowhere real): the copilot reports it; the autopilot flies on regardless.
- let seq=0,last:any;for(let i=0;i<200;i++){from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
- expect(last.world.objective.phase).toBe("COMPLETE");
- from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);expect(chk.checksum).toBe((await direct(defaultScenario(1n))).chk);
- from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:null});const off=await next("WORLD",from);expect(off.copilotStatus).toBeUndefined();
- from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:42});expect((await next("ERROR",from)).message).toBe("invalid Jev key");
-}finally{w.terminate()}},60_000);
+test("while a person flies, Jev only advises: SET_JEV switches it, and the flight is the person's",async()=>{
+ const jev=await serveStandInJev(),{w,inbox,next}=worker();try{
+  w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"MANUAL"});w.postMessage({type:"SET_INTENT",intent:"CLIMB"});w.postMessage({type:"SET_LEARNING",enabled:true});await next("WORLD");
+  let from=inbox.length;jevOn(w,jev);
+  let on:any;for(let i=0;i<400&&!on;i++){on=inbox.slice(from).find(x=>x.type==="WORLD"&&x.copilotStatus);if(!on)await Bun.sleep(5)}
+  expect(on?.copilotStatus).toMatchObject({jev:"READY"});
+  const last=await stepUntil(w,inbox,next,1440n);expect(last.pilot).toBe("MANUAL");
+  for(let i=0;i<200&&!inbox.some(x=>x.type==="WORLD"&&x.copilot);i++){const f=inbox.length;w.postMessage({type:"STEP",ticks:0,seq:0});await next("WORLD",f);await Bun.sleep(5)}
+  expect(inbox.find(x=>x.type==="WORLD"&&x.copilot).copilot).toMatchObject({source:"JEV",flown:"CLIMB"});
+  expect(await checksumOf(w,inbox,next)).toBe((await direct(defaultScenario(1n),1440n,()=>"CLIMB")).chk);
+  from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:null});const off=await next("WORLD",from);expect(off.copilotStatus).toBeUndefined();
+  from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:42});expect((await next("ERROR",from)).message).toBe("invalid Jev key");
+  from=inbox.length;w.postMessage({type:"SET_JEV",apiKey:"k",baseUrl:"file:///etc"});expect((await next("ERROR",from)).message).toBe("invalid Jev URL");
+ }finally{w.terminate();await jev.stop()}
+},60_000);
 
 // ---- Real-world anchoring: a local Terrarium tile server stands in for AWS (synthetic ridge north of Chennai).
 import {deflateSync} from "node:zlib";
@@ -115,31 +147,30 @@ function terrainServer(delayMs:()=>number){
   await Bun.sleep(delayMs());return new Response(png(+m[1]!,+m[2]!,+m[3]!),{headers:{"content-type":"image/png"}})}});
  return {url:`http://localhost:${server.port}/{z}/{x}/{y}.png`,stop:()=>server.stop(true),get requests(){return requests}};
 }
+/** 50 s of a manual climb out of VOMM 07: stays over the flat airfield, so it is the procedural flight bit for bit. */
+const GEO_TICKS=6000n;
 async function geoFlight(delay:()=>number){
  const srv=terrainServer(delay),{w,inbox,next}=worker();try{
   const catalog=await next("GEO_CATALOG");expect(catalog.airports.map((a:any)=>a.ident)).toContain("VOMM");
-  w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",terrainUrl:srv.url,featuresUrl:null});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
+  w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",terrainUrl:srv.url,featuresUrl:null});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"MANUAL"});w.postMessage({type:"SET_INTENT",intent:"CLIMB"});
   const first=await next("WORLD");expect(first.geo).toMatchObject({airport:"VOMM",runway:"07",surveyed:true});expect(first.geo.headingDeg).toBeCloseTo(68.7,0); // OurAirports' surveyed thresholds
-  let seq=0,last:any,holds=0;
-  for(let i=0;i<400;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);
-   if(last.geo.holding||last.geo.state==="LOADING"){holds++;await Bun.sleep(5);continue}
-   if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
-  const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);
+  let seq=1000,holds=0;const last=await stepUntil(w,inbox,next,GEO_TICKS,undefined,e=>{if(e.geo.holding||e.geo.state==="LOADING")holds++});
+  const chk={checksum:await checksumOf(w,inbox,next)};
   for(let i=0;i<100&&!inbox.some(x=>x.type==="TERRAIN"&&x.add.length);i++)await Bun.sleep(10);
   // The terrain manifest is hashed asynchronously after the last tile loads: read it once it has settled.
   let manifest:string|undefined;for(let i=0;i<100&&!manifest;i++){await Bun.sleep(10);const f=inbox.length;w.postMessage({type:"STEP",ticks:0,seq:++seq});manifest=(await next("WORLD",f)).geo.manifest}
   return {last,chk,holds,inbox,manifest,requests:srv.requests};
  }finally{w.terminate();srv.stop()}
 }
-test("anchored to VOMM 07 with real terrain: the flight lands, streams terrain, and matches whatever the tile latency",async()=>{
+test("anchored to VOMM 07 with real terrain: the flight streams terrain and matches whatever the tile latency",async()=>{
  const fast=await geoFlight(()=>0),slow=await geoFlight(()=>5+Math.floor(Math.random()*40));
- expect(fast.last.world.objective.phase).toBe("COMPLETE");expect(fast.last.geo.state).toBe("READY");
+ expect(fast.last.world.tick).toBe(GEO_TICKS);expect(fast.last.geo.state).toBe("READY");
  expect(fast.last.geo.anchor.elevationM).toBeCloseTo(15,0);expect(fast.last.geo.simTiles).toBeGreaterThanOrEqual(9);expect(fast.manifest).toMatch(/^[0-9a-f]{64}$/);
- expect(Math.abs(fast.last.geo.position.lat-12.99)).toBeLessThan(.05);expect(fast.last.geo.aglM).toBeCloseTo(0,1);
+ expect(Math.abs(fast.last.geo.position.lat-12.99)).toBeLessThan(.05);expect(fast.last.geo.aglM).toBeGreaterThan(200);
  expect(slow.chk.checksum).toBe(fast.chk.checksum);expect(slow.last.world.tick).toBe(fast.last.world.tick);expect(slow.manifest).toBe(fast.manifest);
  expect(slow.holds).toBeGreaterThan(0);
- // The airfield is flat, so the mission is identical to the procedural airfield's.
- const ref=await direct(defaultScenario(1n));expect(fast.chk.checksum).toBe(ref.chk);
+ // Over the flat airfield the flight is identical to the procedural airfield's.
+ const ref=await direct(defaultScenario(1n),GEO_TICKS,()=>"CLIMB");expect(fast.chk.checksum).toBe(ref.chk);
  const patches=fast.inbox.filter((x:any)=>x.type==="TERRAIN").flatMap((x:any)=>x.add);
  expect(patches.length).toBeGreaterThan(5);expect(patches[0].positions).toBeInstanceOf(Float32Array);expect(patches[0].indices).toBeInstanceOf(Uint16Array);
 },60_000);
@@ -163,39 +194,39 @@ function featureServer(){
  const server=Bun.serve({port:0,fetch(req){const m=/bytes=(\d+)-(\d+)/.exec(req.headers.get("range")??"");if(!m)return new Response(bytes as Uint8Array<ArrayBuffer>);return new Response(bytes.slice(+m[1]!,+m[2]!+1) as Uint8Array<ArrayBuffer>,{status:206})}});
  return {url:`http://localhost:${server.port}/features.pmtiles`,stop:()=>server.stop(true)};
 }
-test("with buildings and a surveyed runway from PMTiles, the anchored mission still lands and features stream",async()=>{
+test("with buildings and a surveyed runway from PMTiles, features stream and the flight is unchanged",async()=>{
  const terrain=terrainServer(()=>0),features=featureServer(),{w,inbox,next}=worker();try{
-  w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",terrainUrl:terrain.url,featuresUrl:features.url});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
-  let seq=0,last:any;
-  for(let i=0;i<400;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);
-   if(last.geo.holding||last.geo.state==="LOADING"){await Bun.sleep(5);continue}
-   if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
-  expect(last.world.objective.phase).toBe("COMPLETE");
+  w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",terrainUrl:terrain.url,featuresUrl:features.url});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"MANUAL"});w.postMessage({type:"SET_INTENT",intent:"CLIMB"});
+  const last=await stepUntil(w,inbox,next,GEO_TICKS);expect(last.world.tick).toBe(GEO_TICKS);
   expect(last.geo).toMatchObject({surveyed:true,features:{state:"READY"}});expect(last.geo.headingDeg).toBeCloseTo(68.9,1);
   for(let i=0;i<200&&!inbox.some(x=>x.type==="FEATURES"&&x.add.some((p:any)=>p.layer==="airports"));i++)await Bun.sleep(10);
   const patches=inbox.filter(x=>x.type==="FEATURES").flatMap(x=>x.add);expect(patches.some((p:any)=>p.layer==="airports"&&p.lights?.length)).toBe(true);
-  // The flat airfield means the mission is bit-for-bit the procedural one.
-  const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);expect(chk.checksum).toBe((await direct(defaultScenario(1n))).chk);
+  // The flat airfield means the flight is bit-for-bit the procedural one.
+  expect(await checksumOf(w,inbox,next)).toBe((await direct(defaultScenario(1n),GEO_TICKS,()=>"CLIMB")).chk);
  }finally{w.terminate();terrain.stop();features.stop()}
 },60_000);
 
-test("airport search and a cross-country flight through the worker: Chennai → Arakkonam, landing at the destination",async()=>{
- const srv=terrainServer(()=>0),{w,inbox,next}=worker();try{
+test("airport search and a cross-country flight flown by Jev's decisions: Chennai → Arakkonam, landing there, and learning from it",async()=>{
+ const srv=terrainServer(()=>0),jev=await serveStandInJev(),{w,inbox,next}=worker();try{
   let from=inbox.length;w.postMessage({type:"FIND_AIRPORTS",query:"arakkonam",limit:5});const found=await next("AIRPORTS_FOUND",from);
   expect(found.query).toBe("arakkonam");expect(found.airports[0]).toMatchObject({ident:"VOAR"});
   // The full catalogue is loaded: the picker's list stays short, the total counts every airport.
   expect(inbox.filter(x=>x.type==="GEO_CATALOG").at(-1).total).toBeGreaterThan(20_000);
   from=inbox.length;w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",destination:"ZZZZ",terrainUrl:srv.url,featuresUrl:null});expect((await next("ERROR",from)).message).toBe("unknown destination ZZZZ");
+  jevOn(w,jev);w.postMessage({type:"SET_LEARNING",enabled:true});
   w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",destination:"VOAR",terrainUrl:srv.url,featuresUrl:null});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
-  let seq=0,last:any,epochs=new Set<number>();
-  for(let i=0;i<1200;i++){from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);
-   if(last.geo.state==="READY")epochs.add(last.geo.frameEpoch);
-   if(last.geo.holding||last.geo.state==="LOADING"){await Bun.sleep(2);continue}
-   if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
-  expect(last.world.objective.phase).toBe("COMPLETE");expect(last.autopilotMode).toBe("LANDED");
+  const epochs=new Set<number>(),last=await stepUntil(w,inbox,next,1_000_000n,undefined,e=>{if(e.geo?.state==="READY")epochs.add(e.geo.frameEpoch)});
+  expect(last.world.objective.phase).toBe("COMPLETE");expect(last.autopilotMode).toBe("LANDED");expect(last.pilot).toBe("AUTOPILOT");
+  // Jev saw the flight plan: distance, bearing and height relative to the plan to VOAR 24.
+  expect(jev.observations[0]).toMatchObject({objectivePhase:"RETURN",altitude:2});expect(jev.observations[0]!.objective!.distance).toBeGreaterThan(45_000);
   expect(last.geo.arrived).toBe("VOAR");expect(last.geo.route).toMatchObject({destination:"VOAR"});expect(last.geo.route.path.length).toBeGreaterThan(3);
   expect(last.geo.frameEpoch).toBeGreaterThanOrEqual(2);expect(epochs.size).toBeGreaterThanOrEqual(3);
   // Every re-anchoring cleared the old frame's meshes under a new epoch.
   expect(inbox.filter(x=>x.type==="TERRAIN"&&x.clear).length).toBeGreaterThanOrEqual(3);
- }finally{w.terminate();srv.stop()}
-},120_000);
+  // Learning credits the landing to the autopilot, and the trace holds Jev's decisions.
+  const learned=inbox.find(x=>x.type==="LEARNING"&&x.reason==="RECORDED");expect(learned.book).toMatchObject({flights:1,landings:1,autopilot:{flights:1,landings:1},manual:{flights:0}});
+  expect(learned.book.examples.length).toBeGreaterThan(20);expect(learned.book.examples[0].f).toHaveLength(15);
+  await until(()=>inbox.some(x=>x.type==="TRACE"));const trace=inbox.find(x=>x.type==="TRACE").trace;expect(trace).toMatchObject({outcome:"LANDED",pilots:["AUTOPILOT"]});
+  expect(trace.events.filter((x:any)=>x.type==="DECISION"&&x.frame.provider==="jev").length).toBeGreaterThan(100);
+ }finally{w.terminate();srv.stop();await jev.stop()}
+},240_000);

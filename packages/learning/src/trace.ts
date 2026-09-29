@@ -35,7 +35,8 @@ export class FlightTraceRecorder{
   this.#close(tick);if(!this.#frames.length){this.discard();return undefined}
   const terminal=outcome==="ABANDONED"?undefined:TERMINAL[outcome];
   const all=[...this.#frames,...this.#advice].sort((a,b)=>a.startTick<b.startTick?-1:a.startTick>b.startTick?1:0);
-  const events:RuntimeEvent[]=all.map(f=>({type:"DECISION",frame:terminal?{...f,outcome:{terminal}}:f}));
+  // A copy per frame: Bun's structured clone (postMessage) fails on one object shared by many frames that carry bigints.
+  const events:RuntimeEvent[]=all.map(f=>({type:"DECISION",frame:terminal?{...f,outcome:{terminal:{...terminal}}}:f}));
   // World-stream samples interleaved by tick (after decisions of the same tick).
   for(const s of this.#stream){const i=events.findIndex(e=>e.type==="DECISION"&&e.frame.startTick>s.tick);events.splice(i<0?events.length:i,0,{type:"WORLD_STREAM",tick:String(s.tick),stream:s.stream})}
   events.push({type:"EPISODE_END",tick:String(tick),phase,checksum});

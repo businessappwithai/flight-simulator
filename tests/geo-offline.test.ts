@@ -1,10 +1,10 @@
 import {expect,test} from "bun:test";
 import {DeterministicSimulation,defaultScenario} from "@flight/simulation";
-import {steerTo} from "@flight/controller";
 import {FlightTraceRecorder} from "@flight/learning";
 import {GeoWorld,MemoryTileStore,cachingFetch,encodeTerrarium,routePackTiles,terrariumSource,tileBounds,type TileId} from "@flight/geospatial";
 import {LiveDashboardModel} from "../apps/control-room/src/live-dashboard.ts";
 import {catalogIndex,inland} from "./geo-route.helpers.ts";
+import {decisionPilot} from "./jev-stand-in.ts";
 
 const catalog=catalogIndex();
 /** A fake Terrarium server: the body names the tile; `decode` renders the synthetic DEM for it (no PNG needed). */
@@ -19,9 +19,9 @@ function server(){
 }
 async function fly(g:GeoWorld,maxTicks=200_000){
  await g.prepare();expect(g.state).toBe("READY");
- const sim=new DeterministicSimulation();sim.setGround(g.ground,g.landable);let w=sim.reset(defaultScenario(1n));
+ const sim=new DeterministicSimulation(),pilot=decisionPilot(g);sim.setGround(g.ground,g.landable);let w=sim.reset(defaultScenario(1n));
  for(let t=0;t<maxTicks;t++){const wait=g.ensureAround(w.aircraft.position.x,w.aircraft.position.z);if(wait){await wait;t--;continue}
-  w=sim.step(steerTo(w,g.routeTarget(w)!));const m=g.maybeRebase(w);if(m){sim.restore(m);w=m}
+  w=sim.step(pilot(w));const m=g.maybeRebase(w);if(m){sim.restore(m);w=m}
   if(g.arrived(w)){w={...w,objective:{phase:"COMPLETE",checkpointReached:true}};sim.restore(w)}
   if(w.objective.phase!=="OUTBOUND")break}
  return {w,checksum:await sim.checksum()};

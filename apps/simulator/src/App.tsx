@@ -2,7 +2,7 @@ import {Component,useCallback,useEffect,useMemo,useRef,useState,type ReactNode} 
 import {Canvas} from "@react-three/fiber";
 import * as THREE from "three";
 import type {EntityState,PilotIntent,SimPilot} from "@flight/protocol";
-import {RATES,type SimStore,type ScenarioKind} from "./sim-store.ts";
+import {RATES,jevUrlOption,type SimStore,type ScenarioKind} from "./sim-store.ts";
 import {Aircraft,CameraController,Entities,GeoAirports,GeoFeatures,GeoRoute,GeoTerrain,QualityGovernor,Scenery,SimulationDriver,Tiles3D,Trail,ViewDistance} from "./scene.tsx";
 import {TerrainProbe} from "./terrain-probe.ts";
 import {createAircraft} from "./aircraft-model.ts";
@@ -11,11 +11,12 @@ import type {Scenery as SceneryHandle} from "./scenery.ts";
 import {AiPanel,Attribution,Banner,ErrorBox,GeoBadge,Help,Instruments,MovingMap,Readout,StartPanel,TopBar,TouchPad,useHud,LEARNING_LAB_URL} from "./hud.tsx";
 // URL options (also used by automated QA): ?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0
 // Real world: &airport=VOMM&runway=07 (and &terrain=<Terrarium URL template with {z}/{x}/{y}> to use another tile server).
-// Cross-country: &to=VOBL (&toRunway=09L): the autopilot flies there and lands.
+// Cross-country: &to=VOBL (&toRunway=09L): a flight plan to that runway.
 // 3D Tiles over the real world: &tiles3d=<tileset.json URL>, or a Google Maps API key for Photorealistic 3D Tiles (saved in
 // the Jev & learning panel; &tiles3dKey=<key> in a link is saved once and removed from the address bar).
 // &tiles3dOffset=<m> fixes their height (default: measured on the home runway).
-export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string;featuresUrl?:string;destination?:string;destinationRunway?:string;tiles3d?:{url?:string;offsetM?:number};tiles3dKey?:string}
+// Self-hosted Jev for the autopilot: &jevUrl=http://localhost:<port> (localhost or this site only; see jevUrlOption).
+export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string;featuresUrl?:string;destination?:string;destinationRunway?:string;tiles3d?:{url?:string;offsetM?:number};tiles3dKey?:string;jevUrl?:string}
 export function parseOptions(search:string):AppOptions{
  const p=new URLSearchParams(search),seed=p.get("seed"),cam=(p.get("camera")??"").toUpperCase() as CameraMode,rate=Number(p.get("rate"));
  return {seed:seed&&/^\d{1,19}$/.test(seed)?BigInt(seed):1n,scenario:p.get("scenario")==="seeded"?"seeded":"default",pilot:p.get("pilot")?.toUpperCase()==="MANUAL"?"MANUAL":"AUTOPILOT",
@@ -23,7 +24,7 @@ export function parseOptions(search:string):AppOptions{
   ...(/^[A-Za-z0-9-]{2,8}$/.test(p.get("airport")??"")?{airport:p.get("airport")!.toUpperCase()}:{}),...(/^[0-9]{1,2}[LRCT]?$/i.test(p.get("runway")??"")?{runway:p.get("runway")!.toUpperCase()}:{}),
   ...(p.get("terrain")?{terrainUrl:p.get("terrain")!}:{}),...(p.get("features")?{featuresUrl:p.get("features")!}:{}),
   ...(/^[A-Za-z0-9-]{2,8}$/.test(p.get("to")??"")?{destination:p.get("to")!.toUpperCase()}:{}),...(/^[0-9]{1,2}[LRCT]?$/i.test(p.get("toRunway")??"")?{destinationRunway:p.get("toRunway")!.toUpperCase()}:{}),
-  ...tiles3dOption(p)};
+  ...tiles3dOption(p),...(jevUrlOption(p.get("jevUrl"))?{jevUrl:jevUrlOption(p.get("jevUrl"))!}:{})};
 }
 function tiles3dOption(p:URLSearchParams):Pick<AppOptions,"tiles3d"|"tiles3dKey">{
  const url=p.get("tiles3d")??"",key=p.get("tiles3dKey")??"",off=p.get("tiles3dOffset"),offsetM=off!==null&&Number.isFinite(Number(off))?Number(off):undefined;

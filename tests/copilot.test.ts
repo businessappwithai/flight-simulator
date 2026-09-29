@@ -1,16 +1,15 @@
 import {expect,test} from "bun:test";
 import type {JevTransport} from "@flight/decision-jev";
 import type {LearningBook,Observation,PilotIntent} from "@flight/protocol";
-import {Copilot,ADVICE_EVERY_TICKS,ERROR_BACKOFF_TICKS,MIN_TRAINING_EXAMPLES} from "@flight/copilot";
+import {Copilot,ADVICE_EVERY_TICKS,ERROR_BACKOFF_TICKS,MIN_TRAINING_EXAMPLES,copilotFeatures} from "@flight/copilot";
 import {XGBoostBestPracticeClient} from "@flight/experience/xgboost-client";
-import {observationFeatures} from "@flight/cognition";
 import {emptyBook} from "@flight/learning";
 const obs:Observation={tick:120n,speed:30,altitude:40,heading:0,objectivePhase:"OUTBOUND",nearestObstacle:{distance:300,bearing:.2},attitude:{pitch:0,roll:0,verticalSpeed:0}};
 /** Stand-in Jev: fixed probabilities, or an error. */
 const jev=(p:Partial<Record<PilotIntent,number>>|Error,calls:{n:number}={n:0}):((k:string)=>JevTransport)=>()=>({invoke:async r=>{calls.n++;if(p instanceof Error)throw p;
  return {requestId:r.id,engine:{provider:"jev",model:"jev-test-1",version:"x"},latencyMs:1,candidates:r.candidates.map(value=>({value,probability:(p as any)[value]??0}))}}});
 /** A book whose examples say: here CLIMB lands and DESCEND crashes. */
-function book():LearningBook{const f=observationFeatures(obs),b=emptyBook();b.examples=[];
+function book():LearningBook{const f=copilotFeatures(obs),b=emptyBook();b.examples=[];
  for(let i=0;i<40;i++)for(const [a,ok] of [["CLIMB",1],["DESCEND",0],["TURN_LEFT",0]] as const)b.examples.push({f:f.map((v,k)=>k===0?v+(i%9)-4:v),a,ok});return b}
 const next=(c:Copilot,tick:bigint,flown:PilotIntent="HOLD")=>new Promise<[any,any]>(res=>c.advise(tick,obs,flown,(a,f)=>res([a,f])));
 const settle=async(c:Copilot)=>{for(let i=0;i<600&&!c.status.xgboost.trained&&!c.status.xgboost.detail?.startsWith("training failed");i++)await Bun.sleep(25)};
