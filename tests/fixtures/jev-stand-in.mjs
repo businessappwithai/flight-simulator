@@ -53,6 +53,6 @@ export async function serveStandInJev(o={}){
   });
  });
  await new Promise(r=>server.listen(o.port??0,"127.0.0.1",r));
- s.url=`http://localhost:${server.address().port}`;
+ s.url=`http://127.0.0.1:${server.address().port}`;
  return s;
 }
