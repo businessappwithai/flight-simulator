@@ -1,4 +1,4 @@
-// Static production build: dist/simulator/{index.html, assets…, sim.worker.js, xgb.worker.js}. Usage: bun apps/simulator/build.ts
+// Static production build: dist/simulator/{index.html, assets…, sim.worker.js, xgb.worker.js, airports-catalog.json.gz}. Usage: bun apps/simulator/build.ts
 import {join} from "node:path";
 import type {BunPlugin} from "bun";
 async function bundle(entry:string,plugins:BunPlugin[]=[]):Promise<string>{
@@ -17,5 +17,6 @@ if(import.meta.main){
  if(!page.success){console.error(page.logs);process.exit(1)}
  await Bun.write(join(out,"sim.worker.js"),await buildWorker());
  await Bun.write(join(out,"xgb.worker.js"),await buildXgbWorker());
- console.log(`built ${page.outputs.length+2} files into ${out}`);
+ await Bun.write(join(out,"airports-catalog.json.gz"),Bun.file(join(import.meta.dir,"../../packages/geospatial/data/airports-catalog.json.gz")));
+ console.log(`built ${page.outputs.length+3} files into ${out}`);
 }

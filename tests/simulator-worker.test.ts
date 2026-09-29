@@ -3,6 +3,8 @@ import {DeterministicSimulation,defaultScenario,scenarioForSeed} from "@flight/s
 import {autopilotControls} from "@flight/controller";
 function worker(){const w=new Worker(new URL("../apps/simulator/src/sim.worker.ts",import.meta.url).href,{type:"module"});const inbox:any[]=[];w.onmessage=e=>inbox.push(e.data);
  const next=async(type:string,from=0)=>{for(let i=0;i<400;i++){const hit=inbox.slice(from).find(x=>x.type===type);if(hit)return hit;await Bun.sleep(5)}throw new Error(`no ${type}`)};return {w,inbox,next}}
+/** Waits (up to 5 s) for a condition on the worker's messages; the worker may still be loading its airport catalogue. */
+async function until(ok:()=>boolean){for(let i=0;i<500&&!ok();i++)await Bun.sleep(10)}
 async function fly(scenario:"default"|"seeded",seed:string){
  const {w,inbox,next}=worker();try{
   w.postMessage({type:"RESET",seed,scenario});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});await next("WORLD");
@@ -23,7 +25,7 @@ test("manual intents fly the aircraft and pause freezes time",async()=>{const {w
 }finally{w.terminate()}});
 test("bad commands are rejected with ERROR and do not break the worker",async()=>{const {w,inbox,next}=worker();try{
  for(const c of [{type:"RESET",seed:"-1"},{type:"RESET",seed:"12abc"},{type:"SET_INTENT",intent:"BARREL_ROLL"},{type:"SET_PILOT",pilot:"ROBOT"},{type:"NOPE"},{type:"RESTORE",snapshot:{}},null])w.postMessage(c);
- await Bun.sleep(100);expect(inbox.filter(x=>x.type==="ERROR")).toHaveLength(7);
+ await until(()=>inbox.filter(x=>x.type==="ERROR").length>=7);await Bun.sleep(50);expect(inbox.filter(x=>x.type==="ERROR")).toHaveLength(7);
  const from=inbox.length;w.postMessage({type:"STEP",ticks:1e9,seq:9});const ok=await next("WORLD",from);expect(ok.world.tick).toBe(240n);
 }finally{w.terminate()}});
 test("learning records a finished autopilot flight without changing the flight itself",async()=>{const {w,inbox,next}=worker();try{
@@ -117,7 +119,7 @@ async function geoFlight(delay:()=>number){
  const srv=terrainServer(delay),{w,inbox,next}=worker();try{
   const catalog=await next("GEO_CATALOG");expect(catalog.airports.map((a:any)=>a.ident)).toContain("VOMM");
   w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",terrainUrl:srv.url,featuresUrl:null});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
-  const first=await next("WORLD");expect(first.geo).toMatchObject({airport:"VOMM",runway:"07",headingDeg:72});
+  const first=await next("WORLD");expect(first.geo).toMatchObject({airport:"VOMM",runway:"07",surveyed:true});expect(first.geo.headingDeg).toBeCloseTo(68.7,0); // OurAirports' surveyed thresholds
   let seq=0,last:any,holds=0;
   for(let i=0;i<400;i++){const from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);
    if(last.geo.holding||last.geo.state==="LOADING"){holds++;await Bun.sleep(5);continue}
@@ -143,7 +145,7 @@ test("anchored to VOMM 07 with real terrain: the flight lands, streams terrain, 
 },60_000);
 test("SET_WORLD validates its input, and null returns to the procedural airfield",async()=>{const {w,inbox,next}=worker();try{
  for(const c of [{type:"SET_WORLD",airport:"ZZZZ"},{type:"SET_WORLD",airport:"VOMM",runway:"99"},{type:"SET_WORLD",airport:"VOMM",terrainUrl:"javascript:alert(1)"},{type:"SET_WORLD",airport:"VOMM",terrainUrl:"https://x/tiles.png"}])w.postMessage(c);
- await Bun.sleep(100);expect(inbox.filter(x=>x.type==="ERROR")).toHaveLength(4);
+ await until(()=>inbox.filter(x=>x.type==="ERROR").length>=4);await Bun.sleep(50);expect(inbox.filter(x=>x.type==="ERROR")).toHaveLength(4);
  const from=inbox.length;w.postMessage({type:"SET_WORLD",airport:null});const clear=await next("TERRAIN",from);expect(clear.clear).toBe(true);const wd=await next("WORLD",from);expect(wd.geo).toBeUndefined();
 }finally{w.terminate()}});
 
@@ -176,3 +178,24 @@ test("with buildings and a surveyed runway from PMTiles, the anchored mission st
   const from=inbox.length;w.postMessage({type:"STEP",ticks:1,seq:0});const chk=await next("CHECKSUM",from);expect(chk.checksum).toBe((await direct(defaultScenario(1n))).chk);
  }finally{w.terminate();terrain.stop();features.stop()}
 },60_000);
+
+test("airport search and a cross-country flight through the worker: Chennai → Arakkonam, landing at the destination",async()=>{
+ const srv=terrainServer(()=>0),{w,inbox,next}=worker();try{
+  let from=inbox.length;w.postMessage({type:"FIND_AIRPORTS",query:"arakkonam",limit:5});const found=await next("AIRPORTS_FOUND",from);
+  expect(found.query).toBe("arakkonam");expect(found.airports[0]).toMatchObject({ident:"VOAR"});
+  // The full catalogue is loaded: the picker's list stays short, the total counts every airport.
+  expect(inbox.filter(x=>x.type==="GEO_CATALOG").at(-1).total).toBeGreaterThan(20_000);
+  from=inbox.length;w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",destination:"ZZZZ",terrainUrl:srv.url,featuresUrl:null});expect((await next("ERROR",from)).message).toBe("unknown destination ZZZZ");
+  w.postMessage({type:"SET_WORLD",airport:"VOMM",runway:"07",destination:"VOAR",terrainUrl:srv.url,featuresUrl:null});w.postMessage({type:"RESET",seed:"1",scenario:"default"});w.postMessage({type:"SET_PILOT",pilot:"AUTOPILOT"});
+  let seq=0,last:any,epochs=new Set<number>();
+  for(let i=0;i<1200;i++){from=inbox.length;w.postMessage({type:"STEP",ticks:240,seq:++seq});last=await next("WORLD",from);
+   if(last.geo.state==="READY")epochs.add(last.geo.frameEpoch);
+   if(last.geo.holding||last.geo.state==="LOADING"){await Bun.sleep(2);continue}
+   if(last.world.objective.phase==="COMPLETE"||last.world.objective.phase==="FAILED")break}
+  expect(last.world.objective.phase).toBe("COMPLETE");expect(last.autopilotMode).toBe("LANDED");
+  expect(last.geo.arrived).toBe("VOAR");expect(last.geo.route).toMatchObject({destination:"VOAR"});expect(last.geo.route.path.length).toBeGreaterThan(3);
+  expect(last.geo.frameEpoch).toBeGreaterThanOrEqual(2);expect(epochs.size).toBeGreaterThanOrEqual(3);
+  // Every re-anchoring cleared the old frame's meshes under a new epoch.
+  expect(inbox.filter(x=>x.type==="TERRAIN"&&x.clear).length).toBeGreaterThanOrEqual(3);
+ }finally{w.terminate();srv.stop()}
+},120_000);
