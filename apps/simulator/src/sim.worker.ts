@@ -6,7 +6,7 @@ import {FlightTraceRecorder,LearningRecorder,emptyBook,parseBook,situationOf} fr
 import {Copilot} from "@flight/copilot";
 import {observationFeatures} from "@flight/cognition";
 import {XGBoostBestPracticeClient} from "@flight/experience/xgboost-client";
-import {AirportIndex,GeoWorld,SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV,parseOurAirports,terrariumSource} from "@flight/geospatial";
+import {AirportIndex,DEFAULT_FEATURES_URL,GeoWorld,SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV,parseOurAirports,terrariumSource,vectorSources} from "@flight/geospatial";
 // Authoritative flight simulation off the render thread. The page only sends pilot commands and STEP requests.
 const MAX_TICKS_PER_STEP=240,LEARN_EVERY_TICKS=30n;
 const sim=new DeterministicSimulation(),controller=new IntentController(),sensors=new PerfectSensorSuite(),learner=new LearningRecorder(),tracer=new FlightTraceRecorder();
@@ -19,14 +19,16 @@ const emit=(e:SimEvent,transfer:Transferable[]=[])=>postMessage(e,{transfer});
 const airports=new AirportIndex(parseOurAirports(SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV));
 let geo:GeoWorld|undefined,geoEpoch=0;
 const pose=()=>({position:world.aircraft.position,velocity:world.aircraft.velocity,heading:world.aircraft.heading});
-function setWorld(airport:string|null,runway?:string,terrainUrl?:string){
+function setWorld(airport:string|null,runway?:string,terrainUrl?:string,featuresUrl:string|null=DEFAULT_FEATURES_URL){
  geo?.dispose();geo=undefined;sim.setGround(undefined);const epoch=++geoEpoch;
- emit({type:"TERRAIN",epoch,add:[],remove:[],clear:true});
+ emit({type:"TERRAIN",epoch,add:[],remove:[],clear:true});emit({type:"FEATURES",epoch,add:[],remove:[],clear:true});
  if(airport!==null){
   const g=new GeoWorld({airports,airport,runway,terrain:terrariumSource(terrainUrl?{template:terrainUrl}:{}),
+   ...(featuresUrl?{features:vectorSources({url:featuresUrl})}:{}),
    onPatches:(add,remove)=>{if(geo===g)emit({type:"TERRAIN",epoch,add,remove},add.flatMap(p=>[p.positions.buffer,p.colors.buffer,p.indices.buffer]))},
+   onFeatures:(add,remove)=>{if(geo===g)emit({type:"FEATURES",epoch,add,remove},add.flatMap(p=>[p.positions.buffer,p.colors.buffer,...(p.lights?[p.lights.buffer]:[])]))},
    onChange:()=>{if(geo===g){if(g.state==="ERROR")sim.setGround(undefined);else g.update(pose());publish()}}});
-  geo=g;sim.setGround(g.ground);void g.prepare();
+  geo=g;sim.setGround(g.ground,g.landable);void g.prepare();
  }
  world=sim.reset(scenario);controls={aileron:0,elevator:0,rudder:0,throttle:0};
 }
@@ -94,7 +96,8 @@ onmessage=async({data}:MessageEvent<SimCommand>)=>{
     if(data.airport!==null&&(typeof data.airport!=="string"||!airports.find(data.airport)))throw new Error(`unknown airport ${String(data.airport)}`);
     if(data.runway!==undefined&&typeof data.runway!=="string")throw new Error("invalid runway");
     if(data.terrainUrl!==undefined&&(typeof data.terrainUrl!=="string"||!/^(https?:\/\/|\/|\.)/.test(data.terrainUrl)||!/\{z\}.*\{x\}.*\{y\}/.test(data.terrainUrl)))throw new Error("invalid terrain URL template");
-    setWorld(data.airport,data.runway,data.terrainUrl);publish();return;
+    if(data.featuresUrl!==undefined&&data.featuresUrl!==null&&(typeof data.featuresUrl!=="string"||!/^(https?:\/\/|\/|\.)/.test(data.featuresUrl)))throw new Error("invalid features URL");
+    setWorld(data.airport,data.runway,data.terrainUrl,data.featuresUrl===undefined?DEFAULT_FEATURES_URL:data.featuresUrl);publish();return;
    }
    case "RESTORE":throw new Error("RESTORE is not supported by the simulator worker");
    default:throw new Error(`unknown command ${JSON.stringify((data as any)?.type)}`);

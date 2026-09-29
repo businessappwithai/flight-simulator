@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useRef} from "react";
 import {useFrame,useThree} from "@react-three/fiber";
 import * as THREE from "three";
-import type {EntityState,GeoAirportMarker,TerrainPatch,WorldSnapshot} from "@flight/protocol";
+import type {EntityState,FeaturePatch,GeoAirportMarker,TerrainPatch,WorldSnapshot} from "@flight/protocol";
 import {buildScenery,toThree,type Scenery} from "./scenery.ts";
 import {createAircraft,type AircraftModel} from "./aircraft-model.ts";
 import {CameraRig,type CameraMode} from "./cameras.ts";
@@ -98,6 +98,31 @@ export function GeoTerrain({store}:{store:SimStore}){
   return()=>{off();for(const k of [...meshes.keys()])drop(k)};
  },[store,group,material]);
  useEffect(()=>()=>material.dispose(),[material]);
+ return <primitive object={group}/>;
+}
+/**
+ * Real buildings (extruded footprints) and airport surfaces (runways, taxiways, aprons) with runway edge lights.
+ * Flat-shaded, both sides drawn; airport surfaces are pulled towards the camera so they never flicker into terrain.
+ */
+export function GeoFeatures({store}:{store:SimStore}){
+ const group=useMemo(()=>new THREE.Group(),[]);
+ const mats=useMemo(()=>({
+  buildings:new THREE.MeshStandardMaterial({vertexColors:true,roughness:.85,metalness:0,flatShading:true,side:THREE.DoubleSide}),
+  airports:new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,metalness:0,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4}),
+  light:new THREE.MeshBasicMaterial({color:0xfff2c0}),lightGeo:new THREE.SphereGeometry(.45,6,4)}),[]);
+ useEffect(()=>{
+  const objs=new Map<string,THREE.Object3D>();const m4=new THREE.Matrix4();
+  const drop=(k:string)=>{const o=objs.get(k);if(!o)return;group.remove(o);o.traverse(x=>{const mesh=x as THREE.Mesh;if(mesh.geometry&&mesh.geometry!==mats.lightGeo)mesh.geometry.dispose()});objs.delete(k)};
+  const add=(p:FeaturePatch)=>{drop(p.key);const g=new THREE.Group();g.position.set(p.center[0],p.center[1],p.center[2]);g.name=`features:${p.key}`;
+   if(p.positions.length){const geo=new THREE.BufferGeometry();geo.setAttribute("position",new THREE.BufferAttribute(p.positions,3));geo.setAttribute("color",new THREE.BufferAttribute(p.colors,3,true));geo.computeVertexNormals();geo.computeBoundingSphere();
+    const mesh=new THREE.Mesh(geo,p.layer==="buildings"?mats.buildings:mats.airports);mesh.castShadow=p.layer==="buildings";mesh.receiveShadow=true;g.add(mesh)}
+   if(p.lights?.length){const n=p.lights.length/3,inst=new THREE.InstancedMesh(mats.lightGeo,mats.light,n);for(let i=0;i<n;i++)inst.setMatrixAt(i,m4.makeTranslation(p.lights[i*3]!,p.lights[i*3+1]!,p.lights[i*3+2]!));inst.computeBoundingSphere();g.add(inst)}
+   group.add(g);objs.set(p.key,g)};
+  for(const p of store.features.values())add(p);
+  const off=store.onFeatures(d=>{if(d.clear)for(const k of [...objs.keys()])drop(k);for(const k of d.remove)drop(k);for(const p of d.add)add(p)});
+  return()=>{off();for(const k of [...objs.keys()])drop(k)};
+ },[store,group,mats]);
+ useEffect(()=>()=>{mats.buildings.dispose();mats.airports.dispose();mats.light.dispose();mats.lightGeo.dispose()},[mats]);
  return <primitive object={group}/>;
 }
 /** Far plane for the planet-scale view (terrain to the horizon) or the procedural airfield. */

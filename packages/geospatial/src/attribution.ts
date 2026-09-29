@@ -15,6 +15,7 @@ export const DATA_SOURCES: readonly DataSource[] = [
     layers: ["buildings", "landcover", "water", "roads"],
   },
   { id: "osm", name: "OpenStreetMap", license: "ODbL 1.0", attribution: "© OpenStreetMap contributors", url: "https://www.openstreetmap.org/copyright", layers: ["roads", "water", "landcover", "airports"] },
+  { id: "openfreemap", name: "OpenFreeMap", license: "Tiles free to use; data ODbL (OpenStreetMap)", attribution: "OpenFreeMap © OpenMapTiles · Data from OpenStreetMap", url: "https://openfreemap.org/", layers: [] },
   { id: "ourairports", name: "OurAirports", license: "Public domain", attribution: "Airports: OurAirports (public domain)", url: "https://ourairports.com/data/", layers: ["airports"] },
 ];
 

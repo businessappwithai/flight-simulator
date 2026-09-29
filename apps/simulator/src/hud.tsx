@@ -99,6 +99,8 @@ export function GeoBadge({geo}:{geo:GeoStatus}){
  return <div className="geo panel" role="status" aria-label="Position" data-testid="geo-badge">
   <b>{geo.airport} {geo.runway}</b> <span className="wide">{ll(p.lat,"N","S")} {ll(p.lon,"E","W")}</span> <span className="wide">TRK {Math.round(geo.trackDeg).toString().padStart(3,"0")}°</span>
   <span>MSL {m(p.altMsl)}</span> <span>AGL {m(geo.aglM)}</span> <span className="k wide">{state}</span>
+  {geo.features.state!=="OFF"&&<span className="k wide" data-testid="geo-features">{geo.features.state==="UNAVAILABLE"?"buildings unavailable":geo.features.state==="LOADING"?"buildings…":`${geo.features.buildings.toLocaleString()} buildings`}{geo.surveyed?" · surveyed runway":""}</span>}
+  {geo.runwayBelow&&<span data-testid="geo-runway">RWY {geo.runwayBelow}</span>}
  </div>;
 }
 export function Attribution({lines}:{lines:readonly string[]}){const text=lines.join(" · ");return <div className="attribution" title={text} data-testid="attribution">{text}</div>}
@@ -157,7 +159,7 @@ export function Help({onClose}:{onClose:()=>void}){
   <p><kbd>A</kbd> autopilot on/off — the autopilot takes off, flies through the gate and lands. It needs a Jev key (open <b>Jev &amp; learning</b>), which also turns on learning: every finished flight is remembered in this browser.</p>
   <p>Manual (any flight input disengages the autopilot): <kbd>W</kbd>/<kbd>↑</kbd> climb · <kbd>S</kbd>/<kbd>↓</kbd> descend · <kbd>←</kbd>/<kbd>Q</kbd> left · <kbd>→</kbd>/<kbd>E</kbd> right · <kbd>Shift</kbd> slow · <kbd>X</kbd> abort. On touch screens use the on-screen pad.</p>
   <p><kbd>C</kbd> cycle camera · <kbd>1</kbd>–<kbd>4</kbd> chase / cockpit / orbit (drag) / tower · <kbd>P</kbd> or <kbd>Space</kbd> pause · <kbd>+</kbd>/<kbd>-</kbd> time rate · <kbd>R</kbd> restart · <kbd>N</kbd> new scenario · <kbd>I</kbd> instruments · <kbd>L</kbd> Learning Lab (new tab) · <kbd>H</kbd> help</p>
-  <p><b>Real world:</b> on the start card pick <b>From</b> an airport and runway (or add <code>?airport=VNKT&amp;runway=02</code> to the URL). Real terrain streams in around and ahead of the aircraft; the airfield itself stays flat, and flying into terrain beyond it is a crash.</p>
+  <p><b>Real world:</b> on the start card pick <b>From</b> an airport and runway (or add <code>?airport=VNKT&amp;runway=02</code> to the URL). Real terrain, buildings and airport runways stream in around and ahead of the aircraft; the runway is placed from surveyed data when available. The airfield itself stays flat; beyond it, flying into terrain or a building is a crash, and a gentle touchdown on a real runway is a landing.</p>
   <p className="k">Fly through the orange gate, then land back on runway 18. The balloon is the moving obstacle.</p>
   <button onClick={onClose}>Close</button>
  </div></div>;

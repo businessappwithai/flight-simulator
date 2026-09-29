@@ -55,7 +55,10 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   Physics reads terrain through `DeterministicSimulation.setGround` (flat within 3.2 km of the runway), and the
   worker holds the clock until every z12 terrain tile under the aircraft is loaded, so an anchored flight's checksum
   does not depend on network timing. Terrain meshes reach the page as `TERRAIN` events (tile patches with a
-  double-precision centre). Browser QA: `.gstack/qa-reports/scripts/geo-qa.mjs` with `terrain-relay.ts`.
+  double-precision centre). Buildings and airport surfaces come from OpenMapTiles vector tiles (OpenFreeMap by
+  default, or a PMTiles archive baked with `scripts/overture-extract.py` + `scripts/bake-features.ts`): they raise the
+  physics ground (buildings), make real runways landable, and place the anchor on the surveyed runway. Browser QA:
+  `.gstack/qa-reports/scripts/geo-qa.mjs` and `geo-features-qa.mjs` with `terrain-relay.ts --features-dir`.
 - **Planet-scale geography (`packages/geospatial`).** Authoritative positions are WGS84 doubles; the renderer gets
   coordinates relative to a `FloatingOrigin` that re-centres every 5 km. `WorldStreamer` (async, timing-dependent)
   feeds rendering only. Physics, sensors and the AI read the deterministic `SimulationWorld` (fixed z12 tiles,
@@ -76,7 +79,7 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   Learning (`packages/learning`) is a JSON book of `situationFingerprint|action` → landings/crashes, persisted by
   the store in `localStorage["flightWorld.learning.v1"]` and validated with `parseBook` on load.
 - URL options (also used by QA): `?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0`;
-  real world: `&airport=VNKT&runway=02` (`&terrain=<Terrarium URL template>` for another tile server).
+  real world: `&airport=VNKT&runway=02` (`&terrain=<Terrarium URL template>`, `&features=<vector tiles / .pmtiles URL | off>`).
   `globalThis.flightSim` exposes read-only `world`, `pilot`, `camera`, `fps`, `paused`, `checksum` for automation.
 
 ## Browser QA

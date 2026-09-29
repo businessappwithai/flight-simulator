@@ -11,15 +11,18 @@
  *    `TerrainPatch` meshes in the renderer's frame (float32 vertices relative to a per-tile double-precision centre,
  *    which is the floating origin: three.js composes the offset in doubles, so vertices stay precise anywhere).
  */
-import type { GeoAirportMarker, GeoStatus, TerrainPatch, Vec3Tuple } from "@flight/protocol";
+import type { FeaturePatch, GeoAirportMarker, GeoStatus, TerrainPatch, Vec3Tuple } from "@flight/protocol";
 import { type Airport, type AirportIndex, airportDetail, runwayGeometry } from "./airports.ts";
-import { AnchorFrame, type RunwayAnchor, type SimVector, airfieldBlend, runwayAnchor } from "./anchor.ts";
+import { AnchorFrame, type RunwayAnchor, type SimVector, airfieldBlend, runwayAnchor, surveyedRunwayAnchor } from "./anchor.ts";
 import { attributionFor } from "./attribution.ts";
+import { type MeshContext, aerowaysMesh, buildingsMesh } from "./feature-mesh.ts";
+import { FEATURE_ZOOM, FeatureWorld, featureTile } from "./features-world.ts";
 import { type GeoPosition, haversineDistance } from "./geodesy.ts";
 import { SIM_ZOOM, SimulationWorld, extractSimulationTile } from "./sim-world.ts";
 import { type TileSource, WorldStreamer } from "./streamer.ts";
 import type { TerrainTile } from "./terrain.ts";
-import { type TileId, lonLatToTile, tileKey } from "./tiles.ts";
+import { type TileId, lonLatToTile, tileKey, tilesInRadius } from "./tiles.ts";
+import type { VectorFeatures, VectorSources } from "./vector.ts";
 
 export interface GeoWorldOptions {
   airports: AirportIndex;
@@ -39,6 +42,12 @@ export interface GeoWorldOptions {
   patchDebounceMs?: number;
   /** Retries per physics tile before it is recorded as sea level (and the manifest says so). */
   simRetries?: number;
+  /** Buildings and airport surfaces (vector tiles). Without it the world has terrain only. */
+  features?: VectorSources;
+  /** New and dropped building / airport-surface meshes (debounced). */
+  onFeatures?: (add: FeaturePatch[], remove: string[]) => void;
+  /** How long the surveyed-runway lookup may take before the synthesized runway is used (ms). */
+  surveyTimeoutMs?: number;
 }
 export interface AircraftPose { position: SimVector; velocity: SimVector; heading: number }
 
@@ -59,8 +68,14 @@ function colour(h: number, water: boolean): [number, number, number] {
 
 export class GeoWorld {
   readonly airport: Airport;
-  readonly runway: RunwayAnchor;
+  /** Synthesized from OurAirports at first; replaced by the surveyed runway in `prepare` when the data has it. */
+  runway: RunwayAnchor;
   state: "LOADING" | "READY" | "ERROR" = "LOADING";
+  featuresState: "OFF" | "LOADING" | "READY" | "UNAVAILABLE";
+  featuresDetail: string | undefined;
+  readonly #features = new FeatureWorld();
+  readonly #featureLoads = new Map<string, Promise<void>>();
+  readonly #drawnFeatures = new Set<string>();
   detail: string | undefined;
   /** Set by the worker while it holds the clock for terrain. */
   holding = false;
@@ -89,8 +104,10 @@ export class GeoWorld {
     this.#frame = new AnchorFrame(this.runway.anchor, this.runway.headingDegT);
     this.#flat = options.flatRadiusM ?? 3200;
     this.#blend = options.blendM ?? 2600;
+    this.featuresState = options.features ? "LOADING" : "OFF";
     this.#streamer = new WorldStreamer({
-      sources: [options.terrain], cacheBytes: options.cacheBytes ?? 192 * 1024 * 1024, maxConcurrent: options.maxConcurrent ?? 6,
+      sources: [options.terrain, ...(options.features ? [options.features.buildings, options.features.airports] : [])],
+      cacheBytes: options.cacheBytes ?? 192 * 1024 * 1024, maxConcurrent: options.maxConcurrent ?? 6,
       onTile: () => this.#schedulePatches(), onEvict: () => this.#schedulePatches(),
     });
   }
@@ -100,6 +117,8 @@ export class GeoWorld {
 
   /** Loads the physics terrain around the runway and fixes the runway elevation from the DEM. */
   async prepare(): Promise<void> {
+    await this.#survey();
+    if (this.#disposed) return;
     try {
       const p = this.runway.anchor;
       await this.#ensureTiles(this.#neighbourhood(p));
@@ -109,11 +128,83 @@ export class GeoWorld {
       this.#frame = new AnchorFrame({ ...p, altMsl: this.#elevation }, this.runway.headingDegT);
       this.state = "READY";
       this.#last = undefined;
+      if (this.featuresState === "LOADING") { await this.#ensureFeatures(this.#featureNeighbourhood(p)); this.featuresState = "READY"; }
     } catch (e) {
       this.state = "ERROR";
       this.detail = `Real terrain unavailable (${e instanceof Error ? e.message : String(e)}); flying over a flat world.`;
     }
     this.options.onChange?.();
+  }
+
+  /** Places the runway from surveyed data when the vector source has it; marks the source unavailable if unreachable. */
+  async #survey() {
+    const src = this.options.features;
+    if (!src) return;
+    try {
+      const tiles = tilesInRadius(this.airport.position, 4000, FEATURE_ZOOM);
+      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out")), this.options.surveyTimeoutMs ?? 20_000));
+      const data = await Promise.race([Promise.all(tiles.map(t => src.load(t, this.#abort.signal))), timeout]);
+      const surveyed = surveyedRunwayAnchor(this.runway, this.airport.position, data.flatMap(d => d.aeroways));
+      if (surveyed) { this.runway = surveyed; this.#elevation = surveyed.anchor.altMsl; this.#frame = new AnchorFrame(surveyed.anchor, surveyed.headingDegT); }
+    } catch (e) {
+      if (this.#disposed) return;
+      // Decided once, before the flight: every feature tile of this flight is then empty (the manifest records it).
+      this.featuresState = "UNAVAILABLE";
+      this.featuresDetail = `Buildings and airport surfaces unavailable (${e instanceof Error ? e.message : String(e)}).`;
+    }
+  }
+
+  #featureNeighbourhood(p: { lat: number; lon: number }): TileId[] {
+    const c = lonLatToTile(p.lon, p.lat, FEATURE_ZOOM), n = 2 ** FEATURE_ZOOM, out: TileId[] = [];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const y = c.y + dy;
+      if (y >= 0 && y < n) out.push({ z: FEATURE_ZOOM, x: (c.x + dx + n) % n, y });
+    }
+    return out;
+  }
+  #ensureFeatures(tiles: TileId[]): Promise<void> | null {
+    if (this.featuresState === "OFF") return null;
+    const missing = tiles.filter(t => !this.#features.has(t));
+    if (!missing.length) return null;
+    return Promise.all(missing.map(t => {
+      const key = tileKey(t);
+      let p = this.#featureLoads.get(key);
+      if (!p) { p = this.#loadFeatureTile(t).finally(() => this.#featureLoads.delete(key)); this.#featureLoads.set(key, p); }
+      return p;
+    })).then(() => undefined);
+  }
+  async #loadFeatureTile(t: TileId): Promise<void> {
+    const src = this.options.features!, retries = this.options.simRetries ?? 3;
+    if (this.featuresState === "UNAVAILABLE") { this.#features.add({ tile: t, buildings: [], runways: [] }); this.#manifestChanged(); return; }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const v = await src.load(t, this.#abort.signal);
+        if (this.#disposed) return;
+        this.#features.add(featureTile(v));
+        break;
+      } catch (e) {
+        if (this.#disposed) return;
+        if (attempt + 1 >= retries) {
+          this.#features.add({ tile: t, buildings: [], runways: [] });
+          this.featuresDetail = `Feature tile ${tileKey(t)} unavailable; treated as empty.`;
+          break;
+        }
+        await new Promise(r => setTimeout(r, 250 * 2 ** attempt));
+      }
+    }
+    this.#manifestChanged();
+  }
+  #manifestChanged() {
+    // Hashes finish out of order when tiles land together: only the latest generation may set the manifest.
+    const generation = ++this.#manifestGeneration;
+    this.#manifest = undefined;
+    void Promise.all([this.#sim.checksum(), this.#features.checksum()]).then(async ([terrain, features]) => {
+      if (this.#disposed || generation !== this.#manifestGeneration) return;
+      const both = this.featuresState === "OFF" ? terrain : [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${terrain}|${features}`)))].map(x => x.toString(16).padStart(2, "0")).join("");
+      if (this.#disposed || generation !== this.#manifestGeneration) return;
+      this.#manifest = both;
+      this.options.onChange?.();
+    });
   }
 
   #neighbourhood(p: { lat: number; lon: number }): TileId[] {
@@ -148,7 +239,9 @@ export class GeoWorld {
       } catch (e) {
         if (this.#disposed) return;
         if (attempt + 1 >= retries) {
-          if (this.state === "LOADING") throw e;
+          // Before READY a failure means real terrain is unavailable (prepare reports it); tiles still retrying after
+          // that must not overwrite the explanation or add sea-level tiles to a world that is already flat.
+          if (this.state !== "READY") throw e;
           // Keep flying: record the tile as sea level. The manifest hash shows it differs from the real tile.
           this.#sim.add(extractSimulationTile(t, () => 0));
           this.detail = `Terrain tile ${tileKey(t)} unavailable; treated as sea level.`;
@@ -157,10 +250,7 @@ export class GeoWorld {
         await new Promise(r => setTimeout(r, 250 * 2 ** attempt));
       }
     }
-    // Hashes finish out of order when tiles land together: only the latest generation may set the manifest.
-    const generation = ++this.#manifestGeneration;
-    this.#manifest = undefined;
-    void this.#sim.checksum().then(c => { if (!this.#disposed && generation === this.#manifestGeneration) { this.#manifest = c; this.options.onChange?.(); } });
+    this.#manifestChanged();
   }
 
   /**
@@ -169,17 +259,34 @@ export class GeoWorld {
    */
   ensureAround(x: number, z: number): Promise<void> | null {
     if (this.state !== "READY") return null;
-    return this.#ensureTiles(this.#neighbourhood(this.#frame.toGeo({ x, y: 0, z })));
+    const g = this.#frame.toGeo({ x, y: 0, z }), a = this.#ensureTiles(this.#neighbourhood(g)), b = this.#ensureFeatures(this.#featureNeighbourhood(g));
+    return a || b ? Promise.all([a, b]).then(() => undefined) : null;
   }
 
-  /** Terrain height under local (x, z), relative to the runway. Pure function of the loaded physics tiles. */
-  readonly ground = (x: number, z: number): number => {
+  /** Terrain height (no buildings) under local (x, z), relative to the runway. */
+  terrainY(x: number, z: number): number {
     if (this.state !== "READY") return 0;
     const t = airfieldBlend(x, z, this.#flat, this.#blend);
     if (t === 0) return 0;
     const g = this.#frame.toGeo({ x, y: 0, z }), e = this.#sim.elevationAt(g.lat, g.lon);
     const terrain = e === null ? this.#elevation : Math.max(0, e);
     return this.#frame.fromGeo({ lat: g.lat, lon: g.lon, altMsl: this.#elevation + t * (terrain - this.#elevation) }).y;
+  }
+  /**
+   * Physics surface under local (x, z): terrain plus the roof of any building there. Pure function of the loaded
+   * physics tiles. The airfield is flat and free of real buildings.
+   */
+  readonly ground = (x: number, z: number): number => {
+    const y = this.terrainY(x, z);
+    if (y === 0 && airfieldBlend(x, z, this.#flat, this.#blend) === 0) return 0;
+    const g = this.#frame.toGeo({ x, y: 0, z });
+    return y + this.#features.buildingTopAt(g.lon, g.lat);
+  };
+  /** Real runways away from the airfield: a gentle touchdown there is a landing, not terrain contact. */
+  readonly landable = (x: number, z: number): boolean => {
+    if (this.state !== "READY" || airfieldBlend(x, z, this.#flat, this.#blend) === 0) return false;
+    const g = this.#frame.toGeo({ x, y: 0, z });
+    return !!this.#features.runwayAt(g.lon, g.lat);
   };
 
   /** Streams render tiles for the aircraft's pose (cheap to call every step: it only re-plans after real movement). */
@@ -210,7 +317,7 @@ export class GeoWorld {
   }
 
   #schedulePatches() {
-    if (this.#patchTimer || this.#disposed || !this.options.onPatches) return;
+    if (this.#patchTimer || this.#disposed || (!this.options.onPatches && !this.options.onFeatures)) return;
     this.#patchTimer = setTimeout(() => { this.#patchTimer = undefined; this.#flushPatches(); }, this.options.patchDebounceMs ?? 60);
   }
   /** Loaded tiles minus those fully hidden by loaded descendants. */
@@ -236,7 +343,24 @@ export class GeoWorld {
     for (const [k, t] of want) if (!this.#drawn.has(k)) { add.push(this.mesh(t)); this.#drawn.add(k); }
     for (const k of [...this.#drawn]) if (!want.has(k)) { remove.push(k); this.#drawn.delete(k); }
     if (add.length || remove.length) this.options.onPatches?.(add, remove);
+    if (!this.options.onFeatures) return;
+    const wantF = new Map<string, { layer: string; value: VectorFeatures }>();
+    for (const t of this.#streamer.visible()) if (t.layer === "buildings" || t.layer === "airports") wantF.set(`${t.layer}:${tileKey(t.tile)}`, { layer: t.layer, value: t.value as VectorFeatures });
+    const addF: FeaturePatch[] = [], removeF: string[] = [];
+    for (const [k, t] of wantF) {
+      if (this.#drawnFeatures.has(k)) continue;
+      this.#drawnFeatures.add(k);
+      const p = t.layer === "buildings" ? buildingsMesh(t.value, this.#meshContext) : aerowaysMesh(t.value, this.#meshContext);
+      if (p.positions.length || p.lights?.length) addF.push(p);
+    }
+    for (const k of [...this.#drawnFeatures]) if (!wantF.has(k)) { removeF.push(k); this.#drawnFeatures.delete(k); }
+    if (addF.length || removeF.length) this.options.onFeatures(addF, removeF);
   }
+  readonly #meshContext: MeshContext = {
+    toLocal: (lon, lat) => this.#frame.fromGeo({ lat, lon, altMsl: this.#elevation }),
+    terrainY: (x, z) => this.terrainY(x, z),
+    onAirfield: (x, z) => airfieldBlend(x, z, this.#flat, this.#blend) === 0,
+  };
 
   /** Mesh for one DEM tile in the renderer's frame (three.js x = −local x). */
   mesh(t: TerrainTile): TerrainPatch {
@@ -274,9 +398,15 @@ export class GeoWorld {
       terrainElevationM: elev === null ? null : Math.max(0, elev), aglM: this.state === "READY" ? p.y - this.ground(p.x, p.z) : null,
       holding: this.holding, simTiles: this.#sim.size, ...(this.#manifest ? { manifest: this.#manifest } : {}),
       streaming: { wanted: s.wanted, loaded: s.cache.entries, inFlight: s.inFlight, cacheMB: Math.round(s.cache.bytes / 1e5) / 10 },
-      airports: this.#markers, attribution: attributionFor(["terrain", "airports"]),
+      airports: this.#markers,
+      attribution: [...attributionFor(this.featuresState === "OFF" ? ["terrain", "airports"] : ["terrain", "airports", "buildings"]),
+        ...(this.options.features && /openfreemap\.org/.test(this.options.features.url) ? ["Vector tiles: OpenFreeMap · © OpenMapTiles"] : [])],
+      features: { state: this.featuresState, tiles: this.#features.size, buildings: this.#features.buildingCount, ...(this.featuresDetail ? { detail: this.featuresDetail } : {}) },
+      surveyed: !this.runway.synthesized,
+      runwayBelow: this.state === "READY" && airfieldBlend(p.x, p.z, this.#flat, this.#blend) > 0 ? (r => (r ? r.ref ?? "runway" : null))(this.#features.runwayAt(geo.lon, geo.lat)) : null,
     };
   }
+  get featureWorld() { return this.#features; }
   /** Distance from the anchored runway to an airport (m), for the page's airport list. */
   distanceTo(a: Airport) { return haversineDistance(this.runway.anchor, a.position); }
 

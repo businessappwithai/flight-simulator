@@ -3,7 +3,8 @@
  * runway, y up, z along the runway, heading 0 = runway heading) and stays deterministic; this frame converts them
  * to and from WGS84 around the anchor. Conversions use a cached tangent-plane basis (fast enough per physics tick).
  */
-import { type GeoPosition, destinationPoint, ecefToGeodetic, geodeticToEcef, normalizeBearing } from "./geodesy.ts";
+import { type GeoPosition, angleDiff, destinationPoint, ecefToGeodetic, geodeticToEcef, geodeticToEnu, haversineDistance, initialBearing, normalizeBearing } from "./geodesy.ts";
+import { type AerowayFeature, refMatches } from "./vector.ts";
 import { type Airport, runwayGeometry } from "./airports.ts";
 
 export interface SimVector { x: number; y: number; z: number }
@@ -41,7 +42,25 @@ export class AnchorFrame {
   bearing(simHeadingRad: number) { return normalizeBearing(this.headingDeg + simHeadingRad / RAD); }
 }
 
-export interface RunwayAnchor { airport: string; runway: string; headingDegT: number; anchor: GeoPosition; synthesized: boolean }
+export interface RunwayAnchor { airport: string; runway: string; headingDegT: number; anchor: GeoPosition; synthesized: boolean; lengthM?: number }
+
+/**
+ * Replaces a synthesized anchor with the surveyed runway: all runway centreline points near the airport whose ref
+ * names this runway ("07/25" for 07) are projected on the runway axis; the extreme points are the thresholds.
+ * Returns undefined when the data has no matching runway or it disagrees with the expected heading by > 30°.
+ */
+export function surveyedRunwayAnchor(fallback: RunwayAnchor, airportRef: GeoPosition, aeroways: readonly AerowayFeature[], setbackM = 320): RunwayAnchor | undefined {
+  const pts = aeroways.filter(a => a.kind === "runway" && refMatches(a.ref, fallback.runway)).flatMap(a => a.line ?? a.rings?.[0] ?? [])
+    .map(([lon, lat]) => ({ lat, lon, altMsl: 0 })).filter(p => haversineDistance(p, airportRef) < 8000);
+  if (pts.length < 2) return undefined;
+  const h = fallback.headingDegT * Math.PI / 180, ux = Math.sin(h), uy = Math.cos(h);
+  let lo = pts[0]!, hi = pts[0]!, tLo = Infinity, tHi = -Infinity;
+  for (const p of pts) { const v = geodeticToEnu(p, { ...airportRef, altMsl: 0 }), t = v.east * ux + v.north * uy; if (t < tLo) { tLo = t; lo = p; } if (t > tHi) { tHi = t; hi = p; } }
+  const length = haversineDistance(lo, hi), heading = initialBearing(lo, hi);
+  if (length < 300 || Math.abs(angleDiff(fallback.headingDegT, heading)) > 30) return undefined;
+  const a = destinationPoint(lo, heading, setbackM);
+  return { ...fallback, headingDegT: heading, anchor: { ...a, altMsl: fallback.anchor.altMsl }, synthesized: false, lengthM: length };
+}
 
 /**
  * Anchor for taking off from `runwayIdent` at `airport`: local z runs along that runway end's true heading, and

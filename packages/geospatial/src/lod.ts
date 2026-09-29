@@ -25,6 +25,8 @@ export interface LodPolicy {
   /** Ground speed at which the rings start stretching, and the maximum stretch. */
   referenceSpeedMps: number;
   maxRadiusScale: number;
+  /** Per-layer distance caps (m): dense layers such as buildings stop well inside their ring. */
+  layerMaxDistanceM: Partial<Record<WorldLayer, number>>;
 }
 
 export const DEFAULT_LOD_POLICY: LodPolicy = {
@@ -41,6 +43,7 @@ export const DEFAULT_LOD_POLICY: LodPolicy = {
   detailStepsAglM: [900, 4500],
   referenceSpeedMps: 120,
   maxRadiusScale: 2,
+  layerMaxDistanceM: { buildings: 5000, airports: 15000 },
 };
 
 /** Detail level of the innermost ring: 0 = VERY_HIGH, 1 = HIGH, 2 = MEDIUM. */

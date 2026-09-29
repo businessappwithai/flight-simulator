@@ -1,4 +1,4 @@
-import type {CopilotAdvice,CopilotStatus,FlightTrace,GeoCatalogAirport,GeoStatus,LearningBook,LearningInsight,PilotIntent,SimPilot,TerrainPatch,WorldSnapshot} from "@flight/protocol";
+import type {CopilotAdvice,CopilotStatus,FeaturePatch,FlightTrace,GeoCatalogAirport,GeoStatus,LearningBook,LearningInsight,PilotIntent,SimPilot,TerrainPatch,WorldSnapshot} from "@flight/protocol";
 import {SimulationWorkerClient,type WorldEvent} from "./worker-client.ts";
 /**
  * Single source of truth for the presentation layer. Holds only protocol snapshots received from the
@@ -18,6 +18,8 @@ export interface HudState{world?:WorldSnapshot;pilot:SimPilot;intent:PilotIntent
  geo?:GeoStatus;airport?:string;runway?:string;catalog:readonly GeoCatalogAirport[]}
 /** Terrain mesh changes for the 3D view; `clear` drops everything first (the world was re-anchored). */
 export interface TerrainDiff{add:readonly TerrainPatch[];remove:readonly string[];clear:boolean}
+/** Building / airport-surface mesh changes for the 3D view. */
+export interface FeatureDiff{add:readonly FeaturePatch[];remove:readonly string[];clear:boolean}
 /**
  * Browser persistence. Every access is guarded: storage can be disabled (private mode, blocked site data) or
  * full, and the simulator must keep flying either way.
@@ -41,7 +43,9 @@ export function jevKeyProblem(key:string):string|undefined{
  if(key.length>512)return "That key is too long.";
  return undefined;
 }
-export interface StoreOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;workerUrl?:URL;airport?:string;runway?:string;terrainUrl?:string}
+export interface StoreOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;workerUrl?:URL;airport?:string;runway?:string;terrainUrl?:string;
+ /** Buildings/airport surfaces source (vector tiles); "off" disables them; unset uses the worker's default. */
+ featuresUrl?:string}
 export class SimStore{
  readonly client:SimulationWorkerClient;
  latest?:WorldEvent;prevHeading?:number;turnDt=0;
@@ -51,13 +55,18 @@ export class SimStore{
  airport?:string;runway?:string;terrainUrl?:string;catalog:readonly GeoCatalogAirport[]=[];
  /** Terrain meshes currently shown, by tile key (the 3D view mirrors this through onTerrain). */
  readonly terrain=new Map<string,TerrainPatch>();#terrainEpoch=0;#terrainListeners=new Set<(d:TerrainDiff)=>void>();
+ featuresUrl?:string;
+ /** Building and airport-surface meshes currently shown, by key (mirrored by the 3D view through onFeatures). */
+ readonly features=new Map<string,FeaturePatch>();#featureEpoch=0;#featureListeners=new Set<(d:FeatureDiff)=>void>();
+ /** The real runway the aircraft last came to rest on (announced once per touchdown). */
+ #landedOn?:string;
  fps=0;simRate=0;#tickDebt=0;#steppedTicks=0;#rateClock=performance.now();#frames=0;
  #listeners=new Set<()=>void>();#hud:HudState;#dirty=true;#lastNotify=0;#lastPhase="";#bannerTimer?:ReturnType<typeof setTimeout>;#errorTimer?:ReturnType<typeof setTimeout>;
  #banner?:HudState["banner"];#error?:string;#resetListeners=new Set<()=>void>();
  constructor(o:StoreOptions){
   this.jevKey=storage.get(JEV_KEY_STORAGE)||undefined;
   // The autopilot needs a Jev key; without one the flight starts under manual control.
-  this.seed=o.seed;this.scenario=o.scenario;this.pilot=this.jevKey?o.pilot:"MANUAL";this.rate=o.rate;this.airport=o.airport;this.runway=o.runway;this.terrainUrl=o.terrainUrl;
+  this.seed=o.seed;this.scenario=o.scenario;this.pilot=this.jevKey?o.pilot:"MANUAL";this.rate=o.rate;this.airport=o.airport;this.runway=o.runway;this.terrainUrl=o.terrainUrl;this.featuresUrl=o.featuresUrl;
   this.client=new SimulationWorkerClient(o.workerUrl);
   this.client.onError=m=>this.showError(`Simulation: ${m}`);
   this.client.onEvent(e=>{
@@ -65,8 +74,9 @@ export class SimStore{
    if(e.type==="TRACE"){this.#traced(e.trace);return}
    if(e.type==="GEO_CATALOG"){this.catalog=e.airports;this.#notify(true);return}
    if(e.type==="TERRAIN"){this.#terrainDiff(e.epoch,e.add,e.remove,!!e.clear);return}
+   if(e.type==="FEATURES"){this.#featureDiff(e.epoch,e.add,e.remove,!!e.clear);return}
    if(e.type!=="WORLD")return;const prev=this.latest?.world;
-   this.turnDt=prev?Number(e.world.tick-prev.tick)/120:0;this.prevHeading=prev?.aircraft.heading;this.latest=e;this.#phase(e.world);this.#dirty=true});
+   this.turnDt=prev?Number(e.world.tick-prev.tick)/120:0;this.prevHeading=prev?.aircraft.heading;this.latest=e;this.#phase(e.world);this.#landing(e);this.#dirty=true});
   this.client.send({type:"SET_LEARNING",enabled:!!this.jevKey});this.client.send({type:"SET_JEV",apiKey:this.jevKey??null});
   if(this.airport)this.#sendWorld();
   this.#hud=this.#snapshot();this.restart();
@@ -89,7 +99,14 @@ export class SimStore{
   if(clear)this.terrain.clear();for(const k of remove)this.terrain.delete(k);for(const p of add)this.terrain.set(p.key,p);
   for(const l of this.#terrainListeners)l({add,remove,clear});
  }
- #sendWorld(){this.client.send({type:"SET_WORLD",airport:this.airport??null,...(this.runway?{runway:this.runway}:{}),...(this.terrainUrl?{terrainUrl:this.terrainUrl}:{})})}
+ onFeatures(l:(d:FeatureDiff)=>void){this.#featureListeners.add(l);return()=>{this.#featureListeners.delete(l)}}
+ #featureDiff(epoch:number,add:readonly FeaturePatch[],remove:readonly string[],clear:boolean){
+  if(clear)this.#featureEpoch=epoch;else if(epoch!==this.#featureEpoch)return;
+  if(clear)this.features.clear();for(const k of remove)this.features.delete(k);for(const p of add)this.features.set(p.key,p);
+  for(const l of this.#featureListeners)l({add,remove,clear});
+ }
+ #sendWorld(){this.client.send({type:"SET_WORLD",airport:this.airport??null,...(this.runway?{runway:this.runway}:{}),...(this.terrainUrl?{terrainUrl:this.terrainUrl}:{}),
+  ...(this.featuresUrl?{featuresUrl:this.featuresUrl==="off"?null:this.featuresUrl}:{})})}
  /** Fly from a real airport and runway (or back to the procedural airfield with null); the aircraft returns to the runway. */
  setWorld(airport:string|null,runway?:string){this.airport=airport??undefined;this.runway=airport?runway:undefined;this.#sendWorld();this.restart()}
  onReset(l:()=>void){this.#resetListeners.add(l);return()=>{this.#resetListeners.delete(l)}}
@@ -165,6 +182,12 @@ export class SimStore{
  toast(title:string,ms=1800){this.#setBanner({title,sticky:false},ms)}
  showError(message:string,sticky=false){this.#error=message;console.error(message);clearTimeout(this.#errorTimer);if(!sticky)this.#errorTimer=setTimeout(()=>{this.#error=undefined;this.#notify(true)},7000);this.#notify(true)}
  #setBanner(b:HudState["banner"],ms?:number){this.#banner=b;clearTimeout(this.#bannerTimer);if(ms)this.#bannerTimer=setTimeout(()=>{this.#banner=undefined;this.#notify(true)},ms);this.#notify(true)}
+ /** Touchdown on a real runway away from the home airfield: a landing, announced once (full stop not required). */
+ #landing(e:WorldEvent){
+  const a=e.world.aircraft,on=e.geo?.runwayBelow&&a.grounded&&!a.crashed?e.geo.runwayBelow:undefined;
+  if(on&&on!==this.#landedOn)this.#setBanner({title:`Landed on runway ${on}`,detail:"Real runway · throttle up to take off again",sticky:false},4500);
+  this.#landedOn=on;
+ }
  #phase(w:WorldSnapshot){const p=w.objective.phase;if(p===this.#lastPhase)return;const first=this.#lastPhase==="";this.#lastPhase=p;if(first&&p==="OUTBOUND")return;
   const secs=(Number(w.tick)/120).toFixed(1);
   if(p==="RETURN")this.#setBanner({title:"Gate passed",detail:"Return and land on runway 18",sticky:false},3500);

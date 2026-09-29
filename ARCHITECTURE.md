@@ -106,3 +106,25 @@ are unchanged. Three things differ:
   finer ones draw on top. Vertices are float32 offsets from a per-tile centre kept in the mesh position, so three.js
   combines them with the camera in double precision (the floating origin). The page uses a logarithmic depth buffer
   and a far plane of 1,200 km.
+
+### Buildings and airport surfaces (Phases 2 and 3)
+
+`SET_WORLD` also takes `featuresUrl`: OpenMapTiles-schema vector tiles — OpenFreeMap by default (free, no key, from
+OpenStreetMap), any `{z}/{x}/{y}.pbf` server or TileJSON, or a PMTiles archive read with HTTP range requests
+(`scripts/overture-extract.py` + `scripts/bake-features.ts` bake one from Overture/OSM). Only the `building` and
+`aeroway` layers are read (`packages/geospatial`: `mvt.ts`, `pmtiles.ts`, `vector.ts`).
+
+- **Surveyed runway.** Before the flight, `GeoWorld.prepare` looks up the runway centreline whose `ref` names the
+  chosen end (e.g. `07/25`) and anchors on its real threshold and heading (`surveyedRunwayAnchor`); without data it
+  keeps the OurAirports-synthesized runway. The status reports `surveyed`.
+- **Physics.** `FeatureWorld` holds z14 tiles of quantised building footprints (grid-indexed) and runway centreline
+  segments, with a SHA-256 manifest folded into the flight's manifest. `ground(x, z)` = terrain + the roof of the
+  building there (flying into one is terrain contact, i.e. a crash); `landable(x, z)` is true on real runways away
+  from the home airfield, so `DeterministicSimulation.setGround(ground, landable)` treats a gentle touchdown there as
+  a landing. The worker holds the clock until the 3×3 z14 feature tiles around the aircraft are loaded, exactly as
+  for terrain. The flat 3.2 km airfield keeps no real buildings, so the mission is unchanged.
+- **Rendering.** Buildings stream within 5 km (`layerMaxDistanceM`), airport surfaces within 15 km, as
+  `FeaturePatch` meshes (`FEATURES` events): extruded footprints, runway/taxiway strips with centreline dashes,
+  aprons, and runway edge lights.
+- **Source unavailable.** Decided once before the flight: every feature tile is then empty and the runway stays
+  synthesized; the badge says "buildings unavailable" and the manifest records it.

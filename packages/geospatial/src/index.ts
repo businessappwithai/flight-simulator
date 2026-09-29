@@ -16,3 +16,7 @@ export * from "./attribution.ts";
 export * from "./anchor.ts";
 export * from "./sample-airports.ts";
 export * from "./geo-world.ts";
+export * from "./mvt.ts";
+export * from "./pmtiles.ts";
+export * from "./vector.ts";
+export * from "./features-world.ts";
