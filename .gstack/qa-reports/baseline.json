@@ -1,0 +1,11 @@
+{
+  "date": "2026-09-29",
+  "url": "http://localhost:3200/",
+  "healthScore": 99,
+  "issues": [
+    { "id": "ISSUE-001", "title": "Terrain failure reported as one missing tile", "severity": "medium", "category": "content", "status": "fixed" },
+    { "id": "ISSUE-002", "title": "Building/terrain crash banner is generic", "severity": "low", "category": "content", "status": "deferred" },
+    { "id": "ISSUE-003", "title": "Rejected ?airport= persists in URL and scenery mode", "severity": "low", "category": "ux", "status": "deferred" }
+  ],
+  "categoryScores": { "console": 100, "functional": 100, "ux": 97, "visual": 100, "content": 97 }
+}
