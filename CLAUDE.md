@@ -42,6 +42,14 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
 - **Decision engines are plugins.** `packages/decision-core` defines `DecisionEngine`; Jev (`decision-jev`) and
   Open-Jev (`decision-open-jev`) are interchangeable transports. No TypeSafe Jev API contract is bound in this
   repo (see `LOCAL_RUN.md`).
+- **The autopilot is Jev and learning, never a built-in flyer.** With the autopilot on, the worker asks the copilot
+  (`Copilot.decide`: Jev, and the XGBoost model learned from finished flights when Jev is unsure or unreachable) for a
+  `PilotIntent` every `decisionTicks(intent)` (½ s, ⅛ s after a turn) and flies it through `IntentController`, as it
+  flies a person's buttons. The clock holds while a decision is pending, so a flight is reproducible from its decisions.
+  No key → no autopilot; no answer and nothing learned → `AUTOPILOT_OFF`, the person has the aircraft. Pilots decide from
+  the observation's `objective`: the flight plan (`GeoWorld.routeObjective` to a destination, `circuitObjective` for the
+  home circuit). `autopilotControls`/`steerTo` in `@flight/controller` are a reference baseline for benchmarks only.
+  Tests and the Pages smoke use a stand-in Jev service (`tests/fixtures/jev-stand-in.mjs`, page option `&jevUrl=`).
 - **Low-confidence fallback.** `CognitivePilot` (packages/cognition) asks the primary engine and the XGBoost
   best-practice advisor in parallel. If the engine's top candidate is below `minProviderConfidence` (default 0.5,
   also `decision.minProviderConfidence` in `@flight/config`) and the model answered, the model's top-ranked intent
@@ -63,8 +71,8 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   coordinates relative to a `FloatingOrigin` that re-centres every 5 km. `WorldStreamer` (async, timing-dependent)
   feeds rendering only. Physics, sensors and the AI read the deterministic `SimulationWorld` (fixed z12 tiles,
   decimetre elevations, obstacle boxes, runways) whose manifest of tile hashes is recorded for replay.
-- **Two-airport flights.** With a destination, the worker's autopilot flies `GeoWorld.routeTarget` through
-  `steerTo` and re-anchors the local frame under the aircraft every 25 km (`maybeRebase`, `frameEpoch`); the page
+- **Two-airport flights.** With a destination, `GeoWorld` plans the route (great circle, 3° final from a fix 12 km out;
+  `routeObjective`) and the worker re-anchors the local frame under the aircraft every 25 km (`maybeRebase`, `frameEpoch`); the page
   moves the home airfield (`geo.home`) and restarts trails/maps on a new epoch. Airports come from the bundled
   OurAirports catalogue (`packages/geospatial/data/airports-catalog.json.gz`, served next to `sim.worker.js`).
   Tiles go through a Cache API–backed `cachingFetch` (offline route packs: `PACK_ROUTE`; the page's app-shell service
