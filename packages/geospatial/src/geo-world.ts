@@ -211,10 +211,9 @@ export class GeoWorld {
     let rw = this.destinationRunway!;
     const src = this.options.features;
     if (src && this.featuresState !== "UNAVAILABLE") {
-      try {
-        const data = await Promise.all(tilesInRadius(d.position, 4000, FEATURE_ZOOM).map(t => src.load(t, this.#abort.signal)));
-        rw = surveyedRunwayAnchor(rw, d.position, data.flatMap(x => x.aeroways), 0) ?? rw;
-      } catch { /* keep the catalogue runway */ }
+      // Tile by tile, as in #survey: one tile that fails must not throw away the runway the others surveyed.
+      const got = await Promise.all(tilesInRadius(d.position, 4000, FEATURE_ZOOM).map(t => src.load(t, this.#abort.signal).catch(() => undefined)));
+      rw = surveyedRunwayAnchor(rw, d.position, got.flatMap(x => x?.aeroways ?? []), 0) ?? rw;
     }
     await this.#ensureTiles(this.#neighbourhood(rw.anchor));
     const e = this.#sim.elevationAt(rw.anchor.lat, rw.anchor.lon);
