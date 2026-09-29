@@ -3,6 +3,7 @@ import type { AircraftControls, PilotIntent, WorldSnapshot } from "@flight/proto
  * Stateless reference autopilot for the deterministic flight model: take off, fly to the checkpoint,
  * turn back, intercept the runway centreline, fly a stabilised glide path and touch down within the
  * runway completion radius. Also avoids the moving obstacle vertically. Pure function of the snapshot.
+ * A baseline for benchmarks and research only: the simulator's autopilot flies the intents Jev and learning decide.
  */
 export interface AutopilotTuning{cruiseSpeed:number;approachSpeed:number;glideSlopeDeg:number;touchdownOffset:number}
 export const DEFAULT_AUTOPILOT:AutopilotTuning={cruiseSpeed:42,approachSpeed:26,glideSlopeDeg:4,touchdownOffset:6};
@@ -53,9 +54,8 @@ export function autopilotIntent(w:WorldSnapshot,t:AutopilotTuning=DEFAULT_AUTOPI
 }
 export function autopilotControls(w:WorldSnapshot,t:AutopilotTuning=DEFAULT_AUTOPILOT):AircraftControls{return steerTo(w,autopilotTarget(w,t),t)}
 /**
- * The autopilot's control law: fly a target heading/altitude/speed, with the mode deciding take-off, glide-path
- * feed-forward, flare and roll-out. Shared by the mission autopilot and the route autopilot (`routeTarget` in
- * @flight/geospatial). Pure function of the snapshot and target.
+ * The reference autopilot's control law: fly a target heading/altitude/speed, with the mode deciding take-off,
+ * glide-path feed-forward, flare and roll-out. Pure function of the snapshot and target.
  */
 export function steerTo(w:WorldSnapshot,target:AutopilotTarget,t:AutopilotTuning=DEFAULT_AUTOPILOT):AircraftControls{
  const a=w.aircraft,p=a.position,speed=Math.hypot(a.velocity.x,a.velocity.y,a.velocity.z);
@@ -87,14 +87,4 @@ export function steerTo(w:WorldSnapshot,target:AutopilotTarget,t:AutopilotTuning
  const elevator=clamp(4*(pitchTarget-a.pitch),-1,1);
  const throttle=target.mode==="ROLLOUT"?0:clamp(target.speed*.1/34+.08*(target.speed-speed)+(vyTarget>1?.1:0),0,1);
  return {aileron,elevator,rudder:aileron*.15,throttle};
-}
-/** Pilot-intent description of any autopilot target (mission or route), for learning and traces. */
-export function targetIntent(w:WorldSnapshot,target:AutopilotTarget):PilotIntent{
- const a=w.aircraft;
- if(target.mode==="FLARE"||target.mode==="ROLLOUT")return "SLOW";
- if(target.mode==="TAKEOFF")return "CLIMB";
- const turn=wrap(target.heading-a.heading);
- if(Math.abs(turn)>.15)return turn>0?"TURN_RIGHT":"TURN_LEFT";
- const climb=target.altitude-a.position.y;
- return climb>5?"CLIMB":climb<-5?"DESCEND":"HOLD";
 }

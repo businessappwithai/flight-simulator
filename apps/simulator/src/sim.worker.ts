@@ -1,16 +1,20 @@
-import type {AircraftControls,CopilotAdvice,PilotIntent,SimCommand,SimEvent,SimPilot,WorldSnapshot} from "@flight/protocol";
+import type {AircraftControls,CopilotAdvice,Observation,PilotIntent,SimCommand,SimEvent,SimPilot,WorldSnapshot} from "@flight/protocol";
 import {DeterministicSimulation,defaultScenario,scenarioForSeed,type Scenario} from "@flight/simulation";
-import {IntentController,autopilotControls,autopilotIntent,autopilotTarget,steerTo,targetIntent} from "@flight/controller";
-import {PerfectSensorSuite} from "@flight/sensors";
+import {IntentController,decisionTicks} from "@flight/controller";
+import {PerfectSensorSuite,circuitObjective} from "@flight/sensors";
 import {FlightTraceRecorder,LearningRecorder,emptyBook,parseBook,situationOf} from "@flight/learning";
-import {Copilot} from "@flight/copilot";
-import {observationFeatures} from "@flight/cognition";
+import {Copilot,copilotFeatures} from "@flight/copilot";
 import {XGBoostBestPracticeClient} from "@flight/experience/xgboost-client";
 import {AirportIndex,DEFAULT_FEATURES_URL,GeoWorld,SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV,cacheApiStore,cachingFetch,decodeCatalog,parseOurAirports,searchAirports,terrariumSource,vectorSources,type AirportCatalogJson} from "@flight/geospatial";
 // Authoritative flight simulation off the render thread. The page only sends pilot commands and STEP requests.
 const MAX_TICKS_PER_STEP=240,LEARN_EVERY_TICKS=30n;
+// The autopilot is Jev and learning: it asks for the next pilot intent (every half second, sooner after a turn: see
+// decisionTicks) and the intent controller flies it, exactly as it flies a person's button presses. The clock holds
+// while a decision is on its way, so a flight depends on the decisions, not on how fast they arrive.
 const sim=new DeterministicSimulation(),controller=new IntentController(),sensors=new PerfectSensorSuite(),learner=new LearningRecorder(),tracer=new FlightTraceRecorder();
-let scenario:Scenario=defaultScenario(1n),world:WorldSnapshot=sim.reset(scenario),intent:PilotIntent="HOLD",pilot:SimPilot="AUTOPILOT",paused=false;
+let scenario:Scenario=defaultScenario(1n),world:WorldSnapshot=sim.reset(scenario),intent:PilotIntent="HOLD",pilot:SimPilot="MANUAL",paused=false;
+// What the autopilot is flying (the last decision), when the next decision is due, and whether one is on its way.
+let decided:CopilotAdvice|undefined,decideAt=0n,deciding=false,flightGen=0;
 let controls:AircraftControls={aileron:0,elevator:0,rudder:0,throttle:0},flight=0,ended=false,advice:CopilotAdvice|undefined;
 // The XGBoost worker is served next to this one (xgb.worker.js); under Bun (tests) the client finds its source.
 const copilot=new Copilot({xgboost:()=>new XGBoostBestPracticeClient(typeof Bun==="undefined"?new URL("xgb.worker.js",self.location.href):undefined)});
@@ -67,21 +71,43 @@ function setWorld(airport:string|null,runway?:string,terrainUrl?:string,features
  world=sim.reset(scenario);controls={aileron:0,elevator:0,rudder:0,throttle:0};
 }
 const INTENTS=new Set<PilotIntent>(["HOLD","TURN_LEFT","TURN_RIGHT","CLIMB","DESCEND","SLOW","REROUTE","ABORT"]);
-// With a destination the autopilot flies the route (take-off, great circle, approach, landing there); else the circuit.
-const routeTarget=()=>geo?.route?geo.routeTarget(world):undefined;
-const autopilotMode=()=>(routeTarget()??autopilotTarget(world)).mode;
-function publish(seq?:number){emit({type:"WORLD",world,seq,controls,pilot,intent,autopilotMode:world.objective.phase==="COMPLETE"?"LANDED":world.objective.phase==="FAILED"?"CRASHED":autopilotMode(),scenarioId:scenario.id,paused,
- learning:learner.enabled,insight:learner.enabled?learner.insight(sensors.observe(world)):undefined,
+/**
+ * What the pilots (a person, Jev, the learned model) see: the objective is the flight plan, to the destination on a
+ * cross-country flight, else the home circuit once the gate is passed.
+ */
+function observe():Observation{
+ const o=sensors.observe(world),plan=geo?.routeObjective(world)??circuitObjective(world);
+ return plan?{...o,objective:plan,objectivePhase:o.objectivePhase==="COMPLETE"||o.objectivePhase==="FAILED"?o.objectivePhase:"RETURN"}:o;
+}
+const autopilotMode=()=>deciding?"DECIDING":decided?`${decided.intent} · ${decided.source==="JEV"?"Jev":"learned"}`:"—";
+function publish(seq?:number){emit({type:"WORLD",world,seq,controls,pilot,intent:flownIntent(),autopilotMode:world.objective.phase==="COMPLETE"?"LANDED":world.objective.phase==="FAILED"?"CRASHED":autopilotMode(),scenarioId:scenario.id,paused,
+ learning:learner.enabled,insight:learner.enabled?learner.insight(observe()):undefined,
  ...(copilot.enabled||copilot.status.jev!=="OFF"?{copilot:advice,copilotStatus:copilot.status}:{}),...(geo?{geo:geo.status(pose(),world)}:{})})}
 // Learning and traces observe the flight; they never feed back into the controls, so runs stay bit-for-bit
 // deterministic. Manual and autopilot flying are recorded alike, as the pilot intent being flown.
-const flownIntent=()=>{if(pilot!=="AUTOPILOT")return intent;const r=routeTarget();return r?targetIntent(world,r):autopilotIntent(world)};
+const flownIntent=():PilotIntent=>pilot==="AUTOPILOT"?decided?.intent??"HOLD":intent;
 function observeFlight(){
- const o=sensors.observe(world),situation=situationOf(o),flown=flownIntent();
- learner.observe(situation,flown,pilot,observationFeatures(o));
- tracer.record(world.tick,flown,pilot,situation,pilot==="AUTOPILOT"?`autopilot:${autopilotMode()}`:"pilot");
+ const o=observe(),situation=situationOf(o),flown=flownIntent();
+ learner.observe(situation,flown,pilot,copilotFeatures(o));
+ tracer.record(world.tick,flown,pilot,situation,pilot==="AUTOPILOT"?`autopilot:${decided?.source==="BEST_PRACTICE"?"learned":"jev"}`:"pilot");
 }
-const beginFlight=()=>{learner.beginEpisode();tracer.begin(`${scenario.id}#${Date.now().toString(36)}-${++flight}`,scenario.id);ended=false;advice=undefined;copilot.reset()};
+const beginFlight=()=>{learner.beginEpisode();tracer.begin(`${scenario.id}#${Date.now().toString(36)}-${++flight}`,scenario.id);ended=false;advice=undefined;copilot.reset();decided=undefined;decideAt=0n;deciding=false;flightGen++};
+/**
+ * Asks Jev and learning for the autopilot's next intent. Until it arrives the clock holds (STEP only publishes).
+ * When nobody can decide the autopilot disconnects and the aircraft is the person's again, holding its height.
+ */
+function decide(){
+ const tick=world.tick,gen=flightGen,t0=performance.now();deciding=true;
+ copilot.decide(tick,observe()).then(({advice:a,frame})=>{
+  if(gen!==flightGen)return;
+  decided={...a,tick:String(tick),flown:a.intent,latencyMs:Math.round(performance.now()-t0)};advice=decided;decideAt=tick+decisionTicks(a.intent);
+  if(learner.enabled)tracer.advise({...frame,id:`autopilot:${tick}`,startTick:tick,executedIntent:a.intent});
+ },e=>{
+  if(gen!==flightGen)return;
+  pilot="MANUAL";intent="HOLD";decided=undefined;
+  emit({type:"AUTOPILOT_OFF",reason:`Autopilot disconnected: ${e instanceof Error?e.message:String(e)}`});
+ }).finally(()=>{if(gen===flightGen){deciding=false;publish()}});
+}
 // The copilot's recommendation goes into this flight's trace and the next WORLD event; it never touches the controls.
 const takeAdvice=(a:CopilotAdvice,frame:Parameters<FlightTraceRecorder["advise"]>[0])=>{advice=a;if(learner.enabled)tracer.advise(frame)};
 // Commands run strictly in order (SET_WORLD may wait for the airport catalogue; later commands wait behind it).
@@ -107,10 +133,18 @@ async function handle(data:SimCommand){
     if(!book){learner.clear();emit({type:"LEARNING",book:emptyBook(),reason:"REJECTED"});return}
     // Publish too: a parked aircraft does not step, so this is how the page gets the learned insight.
     learner.load(book);copilot.learnFrom(learner.book);emit({type:"LEARNING",book:learner.book,reason:"LOADED"});publish();return}
-   case "SET_JEV":if(data.apiKey!==null&&typeof data.apiKey!=="string")throw new Error("invalid Jev key");copilot.setKey(data.apiKey);advice=undefined;copilot.learnFrom(learner.book);publish();return;
+   case "SET_JEV":
+    if(data.apiKey!==null&&typeof data.apiKey!=="string")throw new Error("invalid Jev key");
+    if(data.baseUrl!==undefined&&(typeof data.baseUrl!=="string"||!/^https?:\/\//.test(data.baseUrl)))throw new Error("invalid Jev URL");
+    copilot.setKey(data.apiKey,data.baseUrl);advice=undefined;decided=undefined;decideAt=0n;flightGen++;deciding=false;copilot.learnFrom(learner.book);publish();return;
    case "CLEAR_LEARNING":learner.clear();tracer.discard();copilot.learnFrom(learner.book);emit({type:"LEARNING",book:learner.book,reason:"CLEARED"});publish();return;
    case "SET_INTENT":if(!INTENTS.has(data.intent))throw new Error(`unknown intent ${String(data.intent)}`);intent=data.intent;return;
-   case "SET_PILOT":if(data.pilot!=="AUTOPILOT"&&data.pilot!=="MANUAL")throw new Error(`unknown pilot ${String(data.pilot)}`);pilot=data.pilot;return;
+   case "SET_PILOT":
+    if(data.pilot!=="AUTOPILOT"&&data.pilot!=="MANUAL")throw new Error(`unknown pilot ${String(data.pilot)}`);
+    if(data.pilot==="AUTOPILOT"&&!copilot.enabled)throw new Error("the autopilot needs a Jev key");
+    // Engaging asks for a decision at once; the pilot flies the last decision only while it is in charge.
+    if(data.pilot!==pilot){pilot=data.pilot;decided=undefined;decideAt=world.tick}
+    return;
    case "PAUSE":paused=true;publish();return;
    case "RESUME":paused=false;publish();return;
    case "STEP":{
@@ -119,12 +153,15 @@ async function handle(data:SimCommand){
     // With real terrain the clock holds until every tile under the aircraft is loaded, so no tick is ever computed
     // with partial terrain: the flight is the same however slowly the network delivers.
     if(geo&&!paused&&ticks>0){const wait=geo.state==="LOADING"||geo.ensureAround(world.aircraft.position.x,world.aircraft.position.z);geo.holding=!!wait;if(wait){publish(data.seq);return}}
+    // The autopilot's next decision is due (or on its way): hold the clock until it is here.
+    const due=()=>pilot==="AUTOPILOT"&&(deciding||world.tick>=decideAt);
+    if(!paused&&ticks>0&&!done()&&due()){if(!deciding)decide();publish(data.seq);return}
     if(!paused)for(let i=0;i<ticks&&!done();i++){
      // Crossing into a new tile mid-batch: hold here until its neighbourhood is loaded too.
      if(geo&&i>0&&geo.ensureAround(world.aircraft.position.x,world.aircraft.position.z))break;
+     if(due()){decide();break}
      if(learner.enabled&&world.tick%LEARN_EVERY_TICKS===0n)observeFlight();
-     const route=pilot==="AUTOPILOT"?routeTarget():undefined;
-     controls=route?steerTo(world,route):pilot==="AUTOPILOT"?autopilotControls(world):controller.controls(intent,sensors.observe(world));world=sim.step(controls);
+     controls=controller.controls(flownIntent(),observe());world=sim.step(controls);
      if(geo){
       // Long flights: keep the local frame under the aircraft (exact transform through WGS84, decided from the state alone).
       const moved=geo.maybeRebase(world);if(moved){sim.restore(moved);world=moved}
@@ -136,7 +173,8 @@ async function handle(data:SimCommand){
     if(geo&&geo.state!=="LOADING"){const bucket=world.tick/STREAM_EVERY_TICKS;if(bucket!==lastStreamSample||geo.frameEpoch!==lastStreamEpoch){lastStreamSample=bucket;lastStreamEpoch=geo.frameEpoch;const stream=geo.streamSample(pose());tracer.stream(world.tick,stream);emit({type:"WORLD_STREAM",tick:String(world.tick),stream})}}
     const finishing=done()&&!ended;if(finishing)ended=true;
     const landed=world.objective.phase==="COMPLETE";
-    if(!done()&&!paused&&ticks>0)copilot.advise(world.tick,sensors.observe(world),flownIntent(),takeAdvice);
+    // While a person flies, Jev and learning advise; on autopilot their decisions are what is flown.
+    if(pilot==="MANUAL"&&!done()&&!paused&&ticks>0)copilot.advise(world.tick,observe(),flownIntent(),takeAdvice);
     if(finishing&&learner.finish(landed)){emit({type:"LEARNING",book:learner.book,reason:"RECORDED"});copilot.learnFrom(learner.book)}
     publish(data.seq);
     if(done()||(data.seq??0)%60===0){const checksum=await sim.checksum();emit({type:"CHECKSUM",tick:String(world.tick),checksum});

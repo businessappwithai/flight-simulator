@@ -11,13 +11,13 @@
  *    `TerrainPatch` meshes in the renderer's frame (float32 vertices relative to a per-tile double-precision centre,
  *    which is the floating origin: three.js composes the offset in doubles, so vertices stay precise anywhere).
  */
-import type { AircraftState, EntityState, FeaturePatch, GeoAirportMarker, GeoRouteStatus, GeoStatus, TerrainPatch, Vec3Tuple, WorldSnapshot, WorldStreamSample } from "@flight/protocol";
+import type { AircraftState, EntityState, FeaturePatch, GeoAirportMarker, GeoRouteStatus, GeoStatus, Observation, TerrainPatch, Vec3Tuple, WorldSnapshot, WorldStreamSample } from "@flight/protocol";
 import { type Airport, type AirportIndex, type RunwayGeometry, airportDetail, runwayGeometry } from "./airports.ts";
 import { AnchorFrame, type RunwayAnchor, type SimVector, airfieldBlend, runwayAnchor, surveyedRunwayAnchor } from "./anchor.ts";
 import { attributionFor } from "./attribution.ts";
 import { type MeshContext, aerowaysMesh, buildingsMesh } from "./feature-mesh.ts";
 import { FEATURE_ZOOM, FeatureWorld, featureTile } from "./features-world.ts";
-import { type GeoPosition, crossTrackDistance, destinationPoint, haversineDistance, initialBearing, normalizeBearing } from "./geodesy.ts";
+import { type GeoPosition, angleDiff, crossTrackDistance, destinationPoint, haversineDistance, initialBearing, normalizeBearing } from "./geodesy.ts";
 import { GreatCircleRoute } from "./route.ts";
 import { routePackTiles } from "./offline.ts";
 import { SIM_ZOOM, SimulationWorld, extractSimulationTile } from "./sim-world.ts";
@@ -53,7 +53,7 @@ export interface GeoWorldOptions {
   /** Destination airport ident and runway end for a cross-country flight. */
   destination?: string;
   destinationRunway?: string;
-  /** Cruise altitude (m MSL) for the route autopilot; it climbs higher over terrain. Default 2,400 m. */
+  /** Cruise altitude (m MSL) of the flight plan; higher over terrain. Default 2,400 m. */
   cruiseAltM?: number;
   /** Re-anchor the local frame once the aircraft is this far from its origin (m). Default 25 km. */
   rebaseDistanceM?: number;
@@ -61,14 +61,11 @@ export interface GeoWorldOptions {
   onRebase?: (epoch: number) => void;
 }
 
-/** The route autopilot's target, in the simulator's local frame (the shape `steerTo` in @flight/controller takes). */
-export interface RouteTarget {
-  mode: "TAKEOFF" | "CLIMB" | "CRUISE" | "DESCENT" | "FINAL" | "FLARE" | "ROLLOUT";
-  heading: number; altitude: number; speed: number; maxBank: number; glideSlopeDeg: number; heightAboveGround: number;
-  /** Target altitude above mean sea level (for display). */
-  altMsl: number;
-}
-export const ROUTE_TUNING = { cruiseSpeed: 85, approachSpeed: 32, glideSlopeDeg: 3, finalApproachM: 12_000, touchdownM: 300, terrainClearanceM: 450, carrotM: 6000 } as const;
+/**
+ * The flight plan to a destination: a 3° final approach from a fix 12 km out, a safe height over terrain en route, and
+ * how far ahead the plan's direction leads (6 km along the great circle, 1.5 km along the runway centreline on final).
+ */
+export const ROUTE_PLAN = { glideSlopeDeg: 3, finalApproachM: 12_000, terrainClearanceM: 450, carrotM: 6000, finalLeadM: 1500 } as const;
 const RAD = Math.PI / 180;
 const wrapPi = (a: number) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 export interface AircraftPose { position: SimVector; velocity: SimVector; heading: number }
@@ -204,7 +201,7 @@ export class GeoWorld {
   /**
    * Before the flight: survey the destination runway (when features are on), load the terrain around it, fix its
    * elevation, and plan the route through a final-approach fix on the extended centreline. All of this is decided
-   * before the clock starts, so the route autopilot's decisions never depend on network timing.
+   * before the clock starts, so the flight plan the pilots decide from never depends on network timing.
    */
   async #prepareDestination() {
     const d = this.destination!;
@@ -219,7 +216,7 @@ export class GeoWorld {
     const e = this.#sim.elevationAt(rw.anchor.lat, rw.anchor.lon);
     this.#destElevation = e === null ? d.position.altMsl : Math.max(0, e);
     this.destinationRunway = rw = { ...rw, anchor: { ...rw.anchor, altMsl: this.#destElevation } };
-    const faf = destinationPoint(rw.anchor, rw.headingDegT + 180, ROUTE_TUNING.finalApproachM);
+    const faf = destinationPoint(rw.anchor, rw.headingDegT + 180, ROUTE_PLAN.finalApproachM);
     this.#route = new GreatCircleRoute([{ ...this.runway.anchor, altMsl: 0 }, { ...faf, altMsl: 0 }, { ...rw.anchor, altMsl: 0 }], 10_000);
   }
   get route() { return this.#route; }
@@ -528,47 +525,35 @@ export class GeoWorld {
     return { key: tileKey(t.tile), z: t.tile.z, center: c, positions, colors: allColors, indices };
   }
 
-  // ---- Cross-country: route autopilot target, re-anchoring, arrival
+  // ---- Cross-country: the flight plan, re-anchoring, arrival
 
   /**
-   * What the route autopilot should fly now (pure function of the world snapshot and data loaded before the
-   * flight or guaranteed by the hold rule): take off, climb and cruise along the great circle at a terrain-safe
-   * altitude, descend on a 3° profile, then intercept the destination centreline, glide, flare and roll out.
+   * The flight plan as a decision engine sees it (Observation.objective): `distance` to the destination threshold (m),
+   * `bearing` of the plan relative to the aircraft's heading (rad, positive to the right: towards the great circle 6 km
+   * ahead, and inside the final-approach fix towards the runway centreline 1.5 km ahead, so it leads onto the line and
+   * on down the runway), and `heightAbove` the planned height (m, negative when below): a 3° path to the threshold,
+   * capped at cruise height, never below a safe height over the terrain ahead outside the final approach, and the
+   * runway itself past the threshold. It describes the plan; the manoeuvres are Jev's and learning's to choose.
    */
-  routeTarget(w: WorldSnapshot): RouteTarget | undefined {
+  routeObjective(w: WorldSnapshot): NonNullable<Observation["objective"]> | undefined {
+    const plan = this.#plan(w.aircraft.position);
+    return plan && { distance: plan.distance, bearing: wrapPi(plan.bearing - w.aircraft.heading), heightAbove: plan.heightAbove };
+  }
+  #plan(p: SimVector) {
     const route = this.#route, rw = this.destinationRunway;
     if (!route || !rw || this.state !== "READY") return undefined;
-    const T = ROUTE_TUNING, a = w.aircraft, p = a.position, hag = p.y - this.ground(p.x, p.z);
-    const g = this.#frame.toGeo(p), speed = Math.hypot(a.velocity.x, a.velocity.z);
-    // Runway geometry in the local frame.
-    const th = this.#frame.fromGeo(rw.anchor), ahead = this.#frame.fromGeo({ ...destinationPoint(rw.anchor, rw.headingDegT, 1000), altMsl: rw.anchor.altMsl });
-    const ux = (ahead.x - th.x) / 1000, uz = (ahead.z - th.z) / 1000, rwHeading = Math.atan2(ux, uz);
-    const along = (p.x - th.x) * ux + (p.z - th.z) * uz, cross = (p.x - th.x) * uz - (p.z - th.z) * ux;
-    const toTouchdown = T.touchdownM - along;
-    const localAlt = (msl: number) => this.#frame.fromGeo({ lat: g.lat, lon: g.lon, altMsl: msl }).y;
-    const make = (mode: RouteTarget["mode"], heading: number, altMsl: number, spd: number, maxBank: number, altitude = localAlt(altMsl)): RouteTarget =>
-      ({ mode, heading, altitude, speed: spd, maxBank, glideSlopeDeg: T.glideSlopeDeg, heightAboveGround: hag, altMsl });
-    const onDestination = along > -200 && along < (rw.lengthM ?? 2500) + 200 && Math.abs(cross) < 60;
-    // Down (or skimming the runway below flare speed after touchdown): roll out, even where the runway slopes away.
-    if ((a.grounded || hag < 0.5) && onDestination && along > -150) return make("ROLLOUT", rwHeading - Math.max(-.2, Math.min(.2, cross * .01)), this.#destElevation, 0, .05, p.y);
-    if ((a.grounded || hag < 2.5) && speed < 30 && !onDestination) return make("TAKEOFF", a.heading, g.altMsl + 80, T.cruiseSpeed, .05, p.y + 80);
-    const aligned = Math.abs(wrapPi(a.heading - rwHeading)) < .6 && Math.abs(cross) < 1500 && along > -T.finalApproachM - 3000 && along < T.touchdownM + 500;
-    if (aligned) {
-      const glideMsl = this.#destElevation + Math.max(0, toTouchdown) * Math.tan(T.glideSlopeDeg * RAD);
-      const heading = rwHeading - Math.max(-.35, Math.min(.35, cross * .004));
-      if (hag < 1.5 && Math.abs(cross) < 60 && along > -150) return make("FLARE", heading, this.#destElevation, T.approachSpeed - 6, .05);
-      return make("FINAL", heading, glideMsl, toTouchdown < 2500 ? T.approachSpeed : Math.min(T.cruiseSpeed, 55), hag < 20 ? .12 : .35);
-    }
-    // En route: fly towards a carrot on the great circle; the route runs through the final-approach fix, so the carrot
-    // leads onto the extended centreline.
-    const pr = route.progress(g), carrot = this.#frame.fromGeo({ ...route.pointAt(Math.min(route.totalM, pr.alongM + T.carrotM)), altMsl: 0 });
-    const heading = Math.atan2(carrot.x - p.x, carrot.z - p.z);
-    const safe = this.#terrainAhead(g, this.#frame.bearing(heading)) + T.terrainClearanceM;
-    const cruise = Math.max(this.options.cruiseAltM ?? 2400, safe);
-    const profile = this.#destElevation + (route.totalM - pr.alongM + T.touchdownM) * Math.tan(T.glideSlopeDeg * RAD) + 150;
-    const target = Math.max(Math.min(cruise, profile), safe);
-    const mode = target > g.altMsl + 30 ? "CLIMB" : target < g.altMsl - 30 ? "DESCENT" : "CRUISE";
-    return make(mode, heading, target, T.cruiseSpeed, .5);
+    const T = ROUTE_PLAN, g = this.#frame.toGeo(p), pr = route.progress(g);
+    // The direction to follow is towards the plan line a lead distance ahead (like a flight director), so it brings the
+    // aircraft onto the line rather than only towards a far point: the great circle en route, and inside the final-approach
+    // fix the runway centreline, which continues down the runway after the threshold.
+    const toFaf = route.totalM - T.finalApproachM, final = pr.alongM >= toFaf, distance = haversineDistance(g, rw.anchor);
+    const along = distance * Math.cos(angleDiff(rw.headingDegT, initialBearing(rw.anchor, g)) * RAD), past = final && along > 0;
+    const lead = final ? along + T.finalLeadM : 0;
+    const next = final ? destinationPoint(rw.anchor, lead >= 0 ? rw.headingDegT : rw.headingDegT + 180, Math.abs(lead)) : route.pointAt(Math.min(toFaf, pr.alongM + T.carrotM));
+    const n = this.#frame.fromGeo({ ...next, altMsl: g.altMsl });
+    let planned = Math.min(this.options.cruiseAltM ?? 2400, this.#destElevation + (past ? 0 : distance * Math.tan(T.glideSlopeDeg * RAD)));
+    if (distance > T.finalApproachM) planned = Math.max(planned, this.#terrainAhead(g, initialBearing(g, next)) + T.terrainClearanceM);
+    return { distance, bearing: Math.atan2(n.x - p.x, n.z - p.z), heightAbove: g.altMsl - planned, planned, final };
   }
 
   /**
@@ -616,7 +601,7 @@ export class GeoWorld {
   #frameMatrix() { if (this.#matrix?.frame !== this.#frame) this.#matrix = { frame: this.#frame, m: this.#frame.ecefToThree() }; return this.#matrix.m; }
   /**
    * Highest terrain in a 2 km-wide corridor ahead, as far as the hold rule guarantees tiles are loaded (one z12 tile
-   * width, ≤ 8 km), so the route autopilot's altitude is a pure function of the state.
+   * width, ≤ 8 km), so the flight plan's safe height is a pure function of the state.
    */
   #terrainAhead(g: GeoPosition, trackDeg: number): number {
     const reach = Math.min(8000, 40_075_016 * Math.cos(g.lat * RAD) / 2 ** SIM_ZOOM);
@@ -635,12 +620,12 @@ export class GeoWorld {
     const route = this.#route, rw = this.destinationRunway, d = this.destination;
     if (!route || !rw || !d) return undefined;
     const g = this.#frame.toGeo(pose.position), dist = haversineDistance(g, rw.anchor), gs = Math.hypot(pose.velocity.x, pose.velocity.z);
-    const target = w ? this.routeTarget(w) : undefined;
+    const plan = this.#plan(pose.position);
     const path = [...route.waypoints].map(q => { const v = this.#frame.fromGeo({ ...q, altMsl: this.#elevation }); return three({ ...v, y: v.y }); });
     return {
       destination: d.ident, name: d.name, runway: rw.runway, runwayHeadingDeg: rw.headingDegT, surveyed: !rw.synthesized,
       distanceM: dist, bearingDeg: initialBearing(g, rw.anchor), crossTrackM: route.progress(g).crossTrackM, totalM: route.totalM,
-      etaS: gs > 5 ? dist / gs : null, phase: target?.mode ?? "—", targetAltMsl: target?.altMsl ?? 0, path,
+      etaS: gs > 5 ? dist / gs : null, phase: plan ? (plan.final ? "FINAL" : "EN ROUTE") : "—", targetAltMsl: plan?.planned ?? 0, path,
     };
   }
 

@@ -1,6 +1,6 @@
 import {expect,test} from "bun:test";
 import type {GeoStatus,WorldSnapshot} from "@flight/protocol";
-import {crashCause,recoverWorld} from "../apps/simulator/src/sim-store.ts";
+import {crashCause,jevUrlOption,recoverWorld} from "../apps/simulator/src/sim-store.ts";
 
 const world=(a:Partial<WorldSnapshot["aircraft"]>):WorldSnapshot=>({tick:600n,random:{state:1n},entities:[],objective:{phase:"FAILED",checkpointReached:false},
  aircraft:{position:{x:0,y:0,z:0},velocity:{x:0,y:0,z:0},heading:0,pitch:0,roll:0,throttle:0,grounded:true,crashed:true,...a}});
@@ -29,4 +29,12 @@ test("a rejected SET_WORLD drops only what the worker objected to",()=>{
  let q:ReturnType<typeof recoverWorld>=r;const msgs=["invalid terrain URL template","invalid features URL","VOBL has no runway 42","VOMM has no runway 99"];
  for(const m of msgs)q=recoverWorld(q!,m);expect(q).toEqual({airport:"VOMM",destination:"VOBL"} as any);
  expect(recoverWorld({airport:"VOMM"},"VOMM has no runway 99")).toBeNull();
+});
+
+test("a self-hosted Jev URL is accepted only on this machine or this site, so a link cannot send the key elsewhere",()=>{
+ const site="https://appwithai.github.io";
+ expect(jevUrlOption("http://localhost:8787",site)).toBe("http://localhost:8787");
+ expect(jevUrlOption("http://127.0.0.1:9000/",site)).toBe("http://127.0.0.1:9000");
+ expect(jevUrlOption("https://appwithai.github.io/jev",site)).toBe("https://appwithai.github.io/jev");
+ for(const bad of ["https://evil.example","http://localhost.evil.example","javascript:alert(1)","file:///etc/passwd","not a url",null])expect(jevUrlOption(bad,site)).toBeUndefined();
 });

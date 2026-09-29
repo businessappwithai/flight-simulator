@@ -17,8 +17,9 @@ export interface LearningBook{version:2;flights:number;landings:number;crashes:n
  /** Recent examples (newest last, bounded) the XGBoost model is trained on. */
  examples?:LearningExample[]}
 /**
- * The copilot's latest recommendation while the autopilot flies: Jev's choice, or the XGBoost model's when Jev's
- * confidence was below the threshold (or Jev could not be reached). `flown` is what the autopilot was flying then.
+ * Jev and learning's latest decision: Jev's choice, or the XGBoost model's when Jev's confidence was below the threshold
+ * (or Jev could not be reached). On autopilot it is what is flown (`flown` = `intent`); while a person flies it is advice,
+ * and `flown` is what the person was flying then.
  */
 export interface CopilotAdvice{tick:string;intent:PilotIntent;flown:PilotIntent;source:"JEV"|"BEST_PRACTICE";provider:string;confidence:number;jevConfidence?:number;reason:string;latencyMs:number}
 export interface CopilotStatus{jev:"OFF"|"READY"|"ERROR";model?:string;detail?:string;xgboost:{examples:number;trained:boolean;version?:string;detail?:string}}
@@ -82,7 +83,7 @@ export interface GeoRouteStatus{destination:string;name:string;runway:string;run
  distanceM:number;bearingDeg:number;
  /** Distance off the planned route (positive: right of it). */
  crossTrackM:number;totalM:number;etaS:number|null;
- /** What the route autopilot is doing (or would do): TAKEOFF, CLIMB, CRUISE, DESCENT, FINAL, FLARE, ROLLOUT. */
+ /** Where the flight plan is: EN ROUTE, or FINAL inside the final-approach fix; and its planned height here (m MSL). */
  phase:string;targetAltMsl:number;
  /** Route polyline (local three.js coordinates, y at ground level) for the moving map and 3D route line. */
  path:Vec3Tuple[]}
@@ -103,7 +104,9 @@ export type SimCommand=
  | {type:"LOAD_LEARNING";book:unknown}
  | {type:"CLEAR_LEARNING"}
  /** The Jev key for the copilot (kept only in the worker's memory); null turns the copilot off. */
- | {type:"SET_JEV";apiKey:string|null}
+ | {type:"SET_JEV";apiKey:string|null;
+  /** A self-hosted Jev (TypeSafe API) base URL instead of the default endpoint. */
+  baseUrl?:string}
  | {type:"RESTORE";snapshot:unknown}
  /** Airport search (ICAO / IATA / name / city) over the loaded catalogue. */
  | {type:"FIND_AIRPORTS";query:string;limit?:number}
@@ -134,6 +137,8 @@ export type SimEvent=
  /** Route pack progress; `cached` is how many tile responses the browser keeps for offline use (null: no Cache API). */
  /** GeoTelemetry sample (also recorded in the flight trace); the page relays it live to an open Control Room. */
  | {type:"WORLD_STREAM";tick:string;stream:WorldStreamSample}
+ /** The autopilot could not get a decision (no Jev answer and nothing learned yet): the person has the aircraft. */
+ | {type:"AUTOPILOT_OFF";reason:string}
  | {type:"ROUTE_PACK";state:"RUNNING"|"DONE"|"ERROR"|"CLEARED";done:number;total:number;failed:number;cached:number|null;detail?:string}
  /** A rejected command (`command` names it, e.g. SET_WORLD for an unknown airport) or a runtime failure. */
  | {type:"ERROR";message:string;command?:string};

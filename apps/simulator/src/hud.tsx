@@ -147,14 +147,17 @@ export function GeoBadge({geo}:{geo:GeoStatus}){
 const eta=(s:number)=>s>=3600?`${Math.floor(s/3600)} h ${Math.round((s%3600)/60)} min`:s>=60?`${Math.round(s/60)} min`:`${Math.round(s)} s`;
 export function Attribution({lines}:{lines:readonly string[]}){const text=lines.join(" · ");return <div className="attribution" title={text} data-testid="attribution">{text}</div>}
 const said=(i:string)=>i.replaceAll("_"," ").toLowerCase(),pc=(x:number)=>`${Math.round(x*100)}%`;
-/** The Jev copilot: what it recommends now, who decided (Jev, or XGBoost when Jev was unsure), and its health. */
+/**
+ * Jev and learning: on autopilot, the decision being flown; while a person flies, what they recommend. Who decided
+ * (Jev, or XGBoost when Jev was unsure or unreachable), and their health.
+ */
 function Copilot({hud}:{hud:HudState}){
- const a=hud.copilot,s=hud.copilotStatus,x=s?.xgboost;
+ const a=hud.copilot,s=hud.copilotStatus,x=s?.xgboost,flying=hud.pilot==="AUTOPILOT";
  return <div className="copilot" data-testid="copilot">
-  <div className="row"><b>Copilot</b><span className={`state ${s?.jev??"OFF"}`} data-testid="jev-status">{s?.jev==="READY"?`Jev ${s.model??"connected"}`:s?.jev==="ERROR"?"Jev unreachable":"Jev starting…"}</span></div>
-  {a?<p data-testid="copilot-advice">Recommends <b>{said(a.intent)}</b>{a.source==="JEV"?<> · Jev {pc(a.confidence)}</>:<> · XGBoost {pc(a.confidence)}{a.jevConfidence!==undefined&&<span className="k"> (Jev unsure: {pc(a.jevConfidence)})</span>}</>}
-   <span className="k"> · flying {said(a.flown)} · {a.latencyMs} ms</span></p>
-   :<p className="k" data-testid="copilot-advice">{hud.started?"Waiting for a recommendation…":"Recommends once the flight starts."}</p>}
+  <div className="row"><b>{flying?"Autopilot":"Copilot"}</b><span className={`state ${s?.jev??"OFF"}`} data-testid="jev-status">{s?.jev==="READY"?`Jev ${s.model??"connected"}`:s?.jev==="ERROR"?"Jev unreachable":"Jev starting…"}</span></div>
+  {a?<p data-testid="copilot-advice">{flying?"Flying":"Recommends"} <b>{said(a.intent)}</b>{a.source==="JEV"?<> · Jev {pc(a.confidence)}</>:<> · XGBoost {pc(a.confidence)}{a.jevConfidence!==undefined&&<span className="k"> (Jev unsure: {pc(a.jevConfidence)})</span>}</>}
+   <span className="k">{flying?"":` · you are flying ${said(a.flown)}`} · {a.latencyMs} ms</span></p>
+   :<p className="k" data-testid="copilot-advice">{flying?"Deciding…":hud.started?"Waiting for a recommendation…":"Recommends once the flight starts."}</p>}
   {s?.jev==="ERROR"&&s.detail&&<p className="problem" data-testid="jev-error">{s.detail}</p>}
   <p className="k" data-testid="xgb-status">XGBoost: {x?.trained?`trained on ${x.examples} examples (${x.version})`:x?.detail??"waiting for a finished flight"}</p>
  </div>;
@@ -212,11 +215,11 @@ export function Help({onClose}:{onClose:()=>void}){
  return <div className="help" onClick={e=>{if(e.target===e.currentTarget)onClose()}}><div className="panel" role="dialog" aria-label="Controls">
   <b>Controls</b>
   <p>Each flight starts parked on runway 18: press <b>Start</b> or any flight control to begin.</p>
-  <p><kbd>A</kbd> autopilot on/off — the autopilot takes off, flies through the gate and lands. It needs a Jev key (open <b>Jev &amp; learning</b>), which also turns on learning: every finished flight is remembered in this browser.</p>
+  <p><kbd>A</kbd> autopilot on/off — the autopilot is Jev and learning: twice a simulated second Jev chooses the next manoeuvre (the same ones as the buttons below), and when Jev is unsure or unreachable the model learned from this browser's finished flights chooses. It needs a Jev key (open <b>Jev &amp; learning</b>), which also turns on learning. If neither can answer, the autopilot disconnects and the aircraft holds its height for you.</p>
   <p>Manual (any flight input disengages the autopilot): <kbd>W</kbd>/<kbd>↑</kbd> climb · <kbd>S</kbd>/<kbd>↓</kbd> descend · <kbd>←</kbd>/<kbd>Q</kbd> left · <kbd>→</kbd>/<kbd>E</kbd> right · <kbd>Shift</kbd> slow · <kbd>X</kbd> abort. On touch screens use the on-screen pad.</p>
   <p><kbd>C</kbd> cycle camera · <kbd>1</kbd>–<kbd>4</kbd> chase / cockpit / orbit (drag) / tower · <kbd>P</kbd> or <kbd>Space</kbd> pause · <kbd>+</kbd>/<kbd>-</kbd> time rate · <kbd>R</kbd> restart · <kbd>N</kbd> new scenario · <kbd>I</kbd> instruments · <kbd>L</kbd> Learning Lab (new tab) · <kbd>H</kbd> help</p>
   <p><b>Real world:</b> on the start card pick <b>From</b> an airport and runway, or search any of the world's airports (or add <code>?airport=VNKT&amp;runway=02</code> to the URL).
-  Choose a search result's <b>To</b> for a cross-country flight (<code>&amp;to=VOBL</code>): the autopilot takes off, follows the great circle at a safe altitude over the terrain, and lands on the destination runway. <kbd>+</kbd> goes up to ×32 for long legs. Real terrain, buildings and airport runways stream in around and ahead of the aircraft; the runway is placed from surveyed data when available. The airfield itself stays flat; beyond it, flying into terrain or a building is a crash, and a gentle touchdown on a real runway is a landing.</p>
+  Choose a search result's <b>To</b> for a cross-country flight (<code>&amp;to=VOBL</code>): the flight plan follows the great circle at a safe height over the terrain onto a 3° approach to the destination runway, and the autopilot (Jev and learning) or you fly it. <kbd>+</kbd> goes up to ×32 for long legs. Real terrain, buildings and airport runways stream in around and ahead of the aircraft; the runway is placed from surveyed data when available. The airfield itself stays flat; beyond it, flying into terrain or a building is a crash, and a gentle touchdown on a real runway is a landing.</p>
   <p className="k">Fly through the orange gate, then land back on runway 18. The balloon is the moving obstacle.</p>
   <button onClick={onClose}>Close</button>
  </div></div>;

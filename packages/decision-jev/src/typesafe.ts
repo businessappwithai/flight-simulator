@@ -8,7 +8,7 @@ export const INTENT_CRITERIA:Readonly<Record<string,string>>={
  TURN_RIGHT:"Bank right and turn at a steady rate while holding height.",
  CLIMB:"Pitch up and climb at a steady rate.",
  DESCEND:"Pitch down and descend at a steady rate.",
- SLOW:"Reduce power and slow down while holding height.",
+ SLOW:"Reduce power and slow down while holding height; on the ground, idle power to roll to a stop.",
  REROUTE:"Turn away onto a new route around a hazard.",
  ABORT:"Climb away at full power to abandon the current approach or manoeuvre."
 };

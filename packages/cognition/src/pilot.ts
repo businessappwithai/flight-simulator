@@ -34,7 +34,9 @@ export interface PilotAdvisors{bestPractice?:BestPracticeAdvisor;worldModel?:Wor
  /** Explicit blend of provider and advisor; when set it chooses the intent instead of the confidence threshold. */
  arbiter?:Arbiter;
  /** Feature encoding for the advisors (default `observationFeatures`). */
- features?:(o:Observation)=>number[]}
+ features?:(o:Observation)=>number[];
+ /** What the engines are asked (default: "Choose the safest useful maneuver."), e.g. the mission and what the observation's fields mean. */
+ question?:string}
 /** `provider` is who decided: the primary engine's provider, or the best-practice source when it took over. */
 export interface PilotDecision{intent:PilotIntent;probability:number;decisionId:string;disagreement:number;evidence:DecisionEvidence;provider:string}
 const pct=(x:number)=>`${Math.round(x*1000)/10}%`;
@@ -86,7 +88,7 @@ export class CognitivePilot {
    this.engines.decide({
     id:decisionId,
     context:{schemaVersion:1,observation,temporal:{recentActions:temporal.recentActions}},
-    question:`Choose the safest useful maneuver. Similar experience: ${JSON.stringify(experiences)}`,
+    question:`${this.advisors.question??"Choose the safest useful maneuver."} Similar experience: ${JSON.stringify(experiences)}`,
     candidates:CANDIDATES,timeoutMs:this.advisors.decisionTimeoutMs??250
    }),
    bestPractice?advise(bestPractice.source,timeoutMs,async()=>[...await bestPractice.predict(features)]):undefined,

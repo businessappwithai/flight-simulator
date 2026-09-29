@@ -6,9 +6,16 @@ const clamp=(x:number,a=-1,b=1)=>Math.max(a,Math.min(b,x));
  * With attitude in the observation the intents are stabilised, like a fly-by-wire light aircraft:
  * turns fly a fixed bank and hold height, releasing a turn rolls the wings level, HOLD keeps the height the
  * aircraft had when HOLD began (never below HOLD_FLOOR_M), CLIMB/DESCEND fly a target vertical speed.
+ * On the ground SLOW means idle power: the aircraft rolls to a stop (after landing, or to stay parked).
  * Without attitude (older producers) it falls back to the original open-loop mapping.
  */
 export const HOLD_FLOOR_M=30;
+/**
+ * How long a decided intent is flown before the pilot decides again (ticks at 120 Hz): half a second, but an eighth for
+ * turns, which change the heading ~20°/s (half a second of TURN is a 10° change, an eighth ~2°).
+ */
+export const DECIDE_EVERY_TICKS=60n,TURN_DECIDE_TICKS=15n;
+export const decisionTicks=(i:PilotIntent)=>i==="TURN_LEFT"||i==="TURN_RIGHT"||i==="REROUTE"?TURN_DECIDE_TICKS:DECIDE_EVERY_TICKS;
 const TURN_BANK=.5,CLIMB_VS=6,DESCEND_VS=-4,ABORT_VS=8,MAX_PITCH=.35;
 // Flight model: steady speed ≈ 340·throttle m/s (capped at 90). Cruise ≈ 54 m/s (light-aircraft speed, ~145 m turn radius at
 // the stabilised bank); SLOW ≈ 31 m/s, still well above the 12 m/s stall.
@@ -28,6 +35,7 @@ export class IntentController {
   const vs=intent==="CLIMB"?CLIMB_VS:intent==="DESCEND"?DESCEND_VS:intent==="ABORT"?ABORT_VS:clamp(.35*(this.#holdAltitude-o.altitude),-4,4);
   const pitchTarget=clamp(Math.asin(clamp(vs/Math.max(o.speed,12),-.9,.9)),-MAX_PITCH,MAX_PITCH);
   const elevator=o.speed<12&&o.altitude<3?0:clamp(4*(pitchTarget-pitch));
+  if(intent==="SLOW"&&o.grounded)return {aileron,elevator:0,rudder:aileron*.15,throttle:0};
   const throttle=intent==="CLIMB"?CLIMB_THROTTLE:intent==="SLOW"?SLOW_THROTTLE:intent==="ABORT"?ABORT_THROTTLE:CRUISE_THROTTLE;
   return {aileron,elevator,rudder:aileron*.15,throttle};
  }
@@ -43,5 +51,5 @@ function legacy(intent:PilotIntent,o:Observation):AircraftControls{
  return {...base,elevator:clamp((70-o.altitude)*.015)};
 }
 
-export { autopilotControls, autopilotIntent, autopilotTarget, steerTo, targetIntent, DEFAULT_AUTOPILOT } from "./autopilot.ts";
+export { autopilotControls, autopilotIntent, autopilotTarget, steerTo, DEFAULT_AUTOPILOT } from "./autopilot.ts";
 export type { AutopilotTarget, AutopilotTuning } from "./autopilot.ts";

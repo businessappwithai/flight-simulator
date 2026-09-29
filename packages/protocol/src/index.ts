@@ -65,6 +65,8 @@ export interface Observation {
     readonly bearing: number;
     readonly heightAbove: number;
   };
+  /** On its wheels (taking off, rolling out). */
+  readonly grounded?: boolean;
   /** Aircraft attitude (radians) and vertical speed (m/s); lets the controller stabilise intents. */
   readonly attitude?: {
     readonly pitch: number;

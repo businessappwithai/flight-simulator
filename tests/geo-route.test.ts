@@ -1,7 +1,8 @@
 import {expect,test} from "bun:test";
 import {DeterministicSimulation,defaultScenario} from "@flight/simulation";
 import {GeoWorld,encodeCatalog,decodeCatalog,searchAirports,haversineDistance} from "@flight/geospatial";
-import {catalogIndex,demSource,flyRoute,inland} from "./geo-route.helpers.ts";
+import {catalogIndex,demSource,inland} from "./geo-route.helpers.ts";
+import {flyDecisions} from "./jev-stand-in.ts";
 
 const catalog=catalogIndex();
 
@@ -24,23 +25,24 @@ test("airport search: exact codes first, then names and cities, larger airports 
  expect(searchAirports(catalog.airports,"a",7)).toHaveLength(7);
 });
 
-test("cross-country: the route autopilot flies Chennai → Bengaluru, re-anchoring every 25 km, and lands on the destination runway",async()=>{
- const r=await flyRoute({airports:catalog,from:"VOMM",runway:"07",to:"VOBL"});
+test("cross-country on decisions: Chennai → Bengaluru, re-anchoring every 25 km, landing on the destination runway",async()=>{
+ // Every control input comes from pilot intents chosen from the observation (the stand-in for Jev), as in the simulator.
+ const r=await flyDecisions({airports:catalog,from:"VOMM",runway:"07",to:"VOBL"});
  expect(r.w.objective.phase).toBe("COMPLETE");expect(r.w.aircraft.crashed).toBe(false);
  expect(r.status.arrived).toBe("VOBL");expect(r.status.runwayBelow).toBe("VOBL 09L/27R");
  // ~265 km: about ten re-anchorings, each moving the frame (and the home airfield) under the aircraft.
  expect(r.rebases).toBeGreaterThanOrEqual(8);expect(r.status.frameEpoch).toBe(r.rebases);
  expect(Math.hypot(r.w.aircraft.position.x,r.w.aircraft.position.z)).toBeLessThan(25_001);
  expect(Math.hypot(r.status.home.position[0],r.status.home.position[2])).toBeGreaterThan(200_000);
- for(const phase of ["CRUISE","FINAL","FLARE","ROLLOUT"])expect(r.phases).toContain(phase);
- expect(r.status.route).toMatchObject({destination:"VOBL",phase:"ROLLOUT"});expect(r.status.route!.distanceM).toBeLessThan(2500);
+ for(const intent of ["CLIMB","TURN_LEFT","TURN_RIGHT","DESCEND","HOLD","SLOW"] as const)expect(r.intents.map(x=>x.intent)).toContain(intent);
+ expect(r.status.route).toMatchObject({destination:"VOBL",phase:"FINAL"});expect(r.status.route!.distanceM).toBeLessThan(4000);expect(Math.abs(r.status.route!.crossTrackM)).toBeLessThan(23);
  // The DEM put Bengaluru ~750 m above Chennai; the aircraft is on the ground there.
  expect(r.status.position.altMsl).toBeGreaterThan(600);expect(r.status.aglM!).toBeCloseTo(0,1);
 },120_000);
 
 test("a route flight is the same however slowly terrain arrives, and lands on a catalogue runway without buildings data",async()=>{
- const fast=await flyRoute({airports:catalog,from:"VOMM",runway:"07",to:"VOAR"});
- const slow=await flyRoute({airports:catalog,from:"VOMM",runway:"07",to:"VOAR",delayMs:()=>Math.floor(Math.random()*8)});
+ const fast=await flyDecisions({airports:catalog,from:"VOMM",runway:"07",to:"VOAR"});
+ const slow=await flyDecisions({airports:catalog,from:"VOMM",runway:"07",to:"VOAR",delayMs:()=>Math.floor(Math.random()*8)});
  expect(fast.w.objective.phase).toBe("COMPLETE");expect(fast.status.arrived).toBe("VOAR");expect(fast.rebases).toBeGreaterThanOrEqual(2);
  expect(slow.holds).toBeGreaterThan(0);
  expect(slow.checksum).toBe(fast.checksum);expect(slow.w.tick).toBe(fast.w.tick);

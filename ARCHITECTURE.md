@@ -140,13 +140,19 @@ so the airports a flight sees never change mid-flight; the worker processes comm
 - **Before the clock starts** (`GeoWorld.prepare`): the destination runway end is chosen (the one named, else the
   longest runway's end most aligned with the inbound bearing), surveyed from vector features when available, its
   elevation read from the DEM, and a great-circle route planned through a final-approach fix 12 km out on the
-  extended centreline. Nothing the route autopilot decides depends on data loaded after this point, except the
+  extended centreline. Nothing in the flight plan depends on data loaded after this point, except the
   terrain the hold rule guarantees.
-- **Route autopilot.** `GeoWorld.routeTarget(world)` is a pure function of the snapshot: take-off, climb and cruise
-  towards a carrot 6 km ahead on the route at `max(min(cruise, 3° profile), terrain + 450 m)`, where the terrain is
-  the highest point in a 2 km corridor ahead as far as the loaded 3×3 tiles reach; then intercept the centreline,
-  fly the 3° glide path, flare and roll out. `steerTo` (`@flight/controller`) turns the target into controls, the
-  same control law as the mission autopilot. Arrival (on a destination runway, below 8 m/s) completes the flight.
+- **Flight plan, flown by decisions.** `GeoWorld.routeObjective(world)` is a pure function of the snapshot that
+  describes the plan in the observation's `objective`: distance to the destination threshold, the direction of the plan
+  (the great circle 6 km ahead; inside the final-approach fix the runway centreline 1.5 km ahead, continuing down the
+  runway) relative to the heading, and height above the planned profile (`max(min(cruise, 3° path), terrain + 450 m)`,
+  where the terrain is the highest point in a 2 km corridor ahead as far as the loaded 3×3 tiles reach; the runway past
+  the threshold). The autopilot is Jev and learning: every `decisionTicks(intent)` the worker asks `Copilot.decide` for a
+  `PilotIntent` (Jev; the XGBoost model learned from finished flights when Jev is unsure or unreachable) and
+  `IntentController` flies it, exactly as it flies a person's buttons (SLOW on the ground idles to a stop). The clock
+  holds while a decision is pending, so a flight is a pure function of its seed, terrain and recorded decisions. With
+  no answer and nothing learned the autopilot disconnects (`AUTOPILOT_OFF`). The home circuit has the same kind of plan
+  (`circuitObjective`). Arrival (on a destination runway, below 8 m/s) completes the flight.
 - **Re-anchoring.** Once the aircraft is 25 km from the local origin the worker calls `maybeRebase`: a new
   `AnchorFrame` under the aircraft, aircraft and entity states transformed exactly through WGS84 (position,
   velocity, heading, pitch), `frameEpoch` + 1. Local coordinates stay small and "up" stays level on flights of any

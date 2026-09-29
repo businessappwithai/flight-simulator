@@ -18,7 +18,7 @@ export interface HudState{world?:WorldSnapshot;pilot:SimPilot;intent:PilotIntent
  copilot?:CopilotAdvice;copilotStatus?:CopilotStatus;
  /** Real-world anchoring: the airport/runway the flight starts from (none = procedural airfield) and where it is. */
  geo?:GeoStatus;airport?:string;runway?:string;catalog:readonly GeoCatalogAirport[];
- /** Cross-country destination (the autopilot flies there and lands), and the latest airport search. */
+ /** Cross-country destination (the flight plan leads there), and the latest airport search. */
  destination?:string;destinationRunway?:string;catalogTotal:number;search:{query:string;airports:readonly GeoCatalogAirport[]};
  /** Offline route pack progress (PACK_ROUTE). */
  routePack?:RoutePack;
@@ -53,6 +53,15 @@ export function tiles3dKeyProblem(key:string):string|undefined{
  return undefined;
 }
 /** Returns an error message for an unusable key, or undefined when the key can be saved. */
+/**
+ * A self-hosted Jev (TypeSafe API) for the autopilot: `&jevUrl=`. Only on this machine (localhost) or this site's own
+ * origin, so a link can never send the Jev key saved in this browser to someone else's server.
+ */
+export function jevUrlOption(raw:string|null,origin=globalThis.location?.origin):string|undefined{
+ if(!raw)return undefined;let u:URL;try{u=new URL(raw)}catch{return undefined}
+ const local=u.protocol==="http:"||u.protocol==="https:"?["localhost","127.0.0.1","[::1]"].includes(u.hostname):false;
+ return local||(origin!==undefined&&u.origin===origin)?u.href.replace(/\/$/,""):undefined;
+}
 export function jevKeyProblem(key:string):string|undefined{
  if(!key)return "Enter a Jev key.";
  if(/\s/.test(key))return "The key cannot contain spaces.";
@@ -64,13 +73,15 @@ export interface StoreOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;r
  /** A Google Maps API key passed in a link: saved like one entered in the panel. */
  tiles3dKey?:string;
  /** Buildings/airport surfaces source (vector tiles); "off" disables them; unset uses the worker's default. */
- featuresUrl?:string}
+ featuresUrl?:string;
+ /** A self-hosted Jev endpoint (already checked by the page: localhost or this site). */
+ jevUrl?:string}
 export class SimStore{
  readonly client:SimulationWorkerClient;
  latest?:WorldEvent;prevHeading?:number;turnDt=0;
  /** Google Maps API key for Photorealistic 3D Tiles (kept only in this browser). */
  tiles3dKey?:string;
- seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;paused=false;intent:PilotIntent="HOLD";started=false;jevKey?:string;
+ seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;paused=false;intent:PilotIntent="HOLD";started=false;jevKey?:string;readonly jevUrl?:string;
  learning:LearningSummary={flights:0,landings:0,crashes:0,experiences:0,manualFlights:0,autopilotFlights:0};
  traces:FlightTrace[]=[];
  airport?:string;runway?:string;terrainUrl?:string;catalog:readonly GeoCatalogAirport[]=[];catalogTotal=0;
@@ -92,12 +103,14 @@ export class SimStore{
   if(o.tiles3dKey&&!tiles3dKeyProblem(o.tiles3dKey))storage.set(TILES3D_KEY_STORAGE,o.tiles3dKey);
   this.tiles3dKey=storage.get(TILES3D_KEY_STORAGE)||o.tiles3dKey||undefined;
   // The autopilot needs a Jev key; without one the flight starts under manual control.
-  this.seed=o.seed;this.scenario=o.scenario;this.pilot=this.jevKey?o.pilot:"MANUAL";this.rate=o.rate;this.airport=o.airport;this.runway=o.runway;this.terrainUrl=o.terrainUrl;this.featuresUrl=o.featuresUrl;
+  this.jevUrl=o.jevUrl;this.seed=o.seed;this.scenario=o.scenario;this.pilot=this.jevKey?o.pilot:"MANUAL";this.rate=o.rate;this.airport=o.airport;this.runway=o.runway;this.terrainUrl=o.terrainUrl;this.featuresUrl=o.featuresUrl;
   this.destination=o.airport?o.destination:undefined;this.destinationRunway=this.destination?o.destinationRunway:undefined;
   this.client=new SimulationWorkerClient(o.workerUrl);
   this.client.onError=(m,command)=>{this.showError(`Simulation: ${m}`);if(command==="SET_WORLD")this.#worldRejected(m)};
   this.client.onEvent(e=>{
    if(e.type==="LEARNING"){this.#learned(e.book,e.reason);return}
+   // Jev did not answer and nothing has been learned yet: the worker handed the aircraft back, holding its height.
+   if(e.type==="AUTOPILOT_OFF"){this.pilot="MANUAL";this.intent="HOLD";this.toast(e.reason,6000);this.#notify(true);return}
    if(e.type==="TRACE"){this.#traced(e.trace);return}
    if(e.type==="GEO_CATALOG"){this.catalog=e.airports;this.catalogTotal=e.total??e.airports.length;this.#notify(true);return}
    if(e.type==="WORLD_STREAM"){this.#relay({type:"WORLD_STREAM",tick:e.tick,stream:e.stream});return}
@@ -107,7 +120,7 @@ export class SimStore{
    if(e.type==="FEATURES"){this.#featureDiff(e.epoch,e.add,e.remove,!!e.clear);return}
    if(e.type!=="WORLD")return;const prev=this.latest?.world;
    this.turnDt=prev?Number(e.world.tick-prev.tick)/120:0;this.prevHeading=prev?.aircraft.heading;this.latest=e;this.#rebased(e);this.#phase(e);this.#landing(e);this.#dirty=true});
-  this.client.send({type:"SET_LEARNING",enabled:!!this.jevKey});this.client.send({type:"SET_JEV",apiKey:this.jevKey??null});
+  this.client.send({type:"SET_LEARNING",enabled:!!this.jevKey});this.client.send({type:"SET_JEV",apiKey:this.jevKey??null,...(this.jevUrl?{baseUrl:this.jevUrl}:{})});
   if(this.airport)this.#sendWorld();
   this.#hud=this.#snapshot();this.restart();
   // After the first restart, which clears banners: a warning about unreadable saved learning must stay visible.
@@ -195,7 +208,7 @@ export class SimStore{
  saveJevKey(raw:string):string|undefined{
   const key=raw.trim(),problem=jevKeyProblem(key);if(problem)return problem;
   if(!storage.set(JEV_KEY_STORAGE,key))return "This browser blocked saving the key (storage is disabled or full).";
-  this.jevKey=key;this.client.send({type:"SET_LEARNING",enabled:true});this.client.send({type:"SET_JEV",apiKey:key});this.toast("Jev key saved — autopilot and learning are on",2600);this.#notify(true);return undefined;
+  this.jevKey=key;this.client.send({type:"SET_LEARNING",enabled:true});this.client.send({type:"SET_JEV",apiKey:key,...(this.jevUrl?{baseUrl:this.jevUrl}:{})});this.toast("Jev key saved — autopilot and learning are on",2600);this.#notify(true);return undefined;
  }
  removeJevKey(){
   storage.remove(JEV_KEY_STORAGE);this.jevKey=undefined;this.client.send({type:"SET_LEARNING",enabled:false});this.client.send({type:"SET_JEV",apiKey:null});

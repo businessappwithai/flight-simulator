@@ -6,11 +6,12 @@ export {FlightTraceRecorder,MAX_TRACE_FRAMES,MAX_ADVICE_FRAMES} from "./trace.ts
 /**
  * Browser-side experience learning from manual and autopilot flying alike. While enabled, the recorder samples
  * (situation, intent, pilot) during a flight; when the flight lands or crashes it credits every sampled pair
- * once per pilot that flew it. Autopilot flying is recorded as the intent it is flying (see autopilotIntent),
- * so both pilots build the same book. The book is plain JSON so the page can keep it in localStorage.
+ * once per pilot that flew it. Autopilot flying is recorded as the intent it flew (what Jev or the learned model
+ * decided), so both pilots build the same book. The book is plain JSON so the page can keep it in localStorage.
  * Learning only observes: it never changes the controls the simulation applies.
  */
-export const MAX_ENTRIES=4000,MAX_EXAMPLES=2000,MAX_EXAMPLES_PER_FLIGHT=150,EXAMPLE_FEATURES=8;
+/** Examples carry `copilotFeatures` (observationFeaturesV2: situation, objective geometry, attitude), so what is learned can navigate. */
+export const MAX_ENTRIES=4000,MAX_EXAMPLES=2000,MAX_EXAMPLES_PER_FLIGHT=150,EXAMPLE_FEATURES=15;
 export const situationOf=situationFingerprint;
 const INTENTS:ReadonlySet<string>=new Set<PilotIntent>(["HOLD","TURN_LEFT","TURN_RIGHT","CLIMB","DESCEND","SLOW","REROUTE","ABORT"]);
 const SITUATION=/^[A-Z0-9_+]{1,200}$/;
@@ -43,7 +44,9 @@ export function parseBook(raw:unknown):LearningBook|undefined{
   if(!Array.isArray(b.examples)||b.examples.length>MAX_EXAMPLES)return undefined;
   examples=[];
   for(const x of b.examples as unknown[]){const e=x as Record<string,unknown>;
-   if(!e||!Array.isArray(e.f)||e.f.length!==EXAMPLE_FEATURES||!e.f.every(v=>typeof v==="number"&&Number.isFinite(v))||!INTENTS.has(String(e.a))||(e.ok!==0&&e.ok!==1))return undefined;
+   if(!e||!Array.isArray(e.f)||!e.f.every(v=>typeof v==="number"&&Number.isFinite(v))||!INTENTS.has(String(e.a))||(e.ok!==0&&e.ok!==1))return undefined;
+   // Examples from books saved before the objective features existed (8 features) are dropped; the tallies stay.
+   if(e.f.length!==EXAMPLE_FEATURES)continue;
    examples.push({f:[...e.f as number[]],a:e.a as PilotIntent,ok:e.ok})}
  }
  return {version:2,flights:b.flights,landings:b.landings,crashes:b.crashes,manual,autopilot,entries,...(examples?{examples}:{})};
