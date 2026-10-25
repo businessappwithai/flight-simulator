@@ -8,7 +8,11 @@ import {TerrainProbe} from "./terrain-probe.ts";
 import {createAircraft} from "./aircraft-model.ts";
 import {CAMERA_MODES,type CameraMode} from "./cameras.ts";
 import type {Scenery as SceneryHandle} from "./scenery.ts";
-import {AiPanel,Attribution,Banner,ErrorBox,GeoBadge,Help,Instruments,MovingMap,Readout,StartPanel,TopBar,TouchPad,useHud,LEARNING_LAB_URL} from "./hud.tsx";
+import {LandscapeWorld,RevealCamera} from "./landscape-scene.tsx";
+import {RevealDirector} from "./reveal.ts";
+import {RevealSound,renderRevealSound} from "./sound.ts";
+import {EditorOverlay} from "./editor-overlay.tsx";
+import {AiPanel,Attribution,Banner,ErrorBox,GeoBadge,LandscapeBadge,Help,Instruments,MovingMap,Readout,StartPanel,TopBar,TouchPad,useHud,LEARNING_LAB_URL} from "./hud.tsx";
 // URL options (also used by automated QA): ?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0
 // Real world: &airport=VOMM&runway=07 (and &terrain=<Terrarium URL template with {z}/{x}/{y}> to use another tile server).
 // Cross-country: &to=VOBL (&toRunway=09L): a flight plan to that runway.
@@ -16,7 +20,9 @@ import {AiPanel,Attribution,Banner,ErrorBox,GeoBadge,Help,Instruments,MovingMap,
 // the Jev & learning panel; &tiles3dKey=<key> in a link is saved once and removed from the address bar).
 // &tiles3dOffset=<m> fixes their height (default: measured on the home runway).
 // Self-hosted Jev for the autopilot: &jevUrl=http://localhost:<port> (localhost or this site only; see jevUrlOption).
-export interface AppOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string;featuresUrl?:string;destination?:string;destinationRunway?:string;tiles3d?:{url?:string;offsetM?:number};tiles3dKey?:string;jevUrl?:string}
+// Simulated planet: ?world=landscape (&seed=7 also seeds the planet; &brand=<JSON silhouette>; &reveal=1 plays the
+// build-and-reveal sequence once the planet is ready; &sound=0 keeps it silent).
+export interface AppOptions{world?:"real"|"landscape";planetSeed?:string;brand?:unknown;reveal?:boolean;sound?:boolean;seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string;featuresUrl?:string;destination?:string;destinationRunway?:string;tiles3d?:{url?:string;offsetM?:number};tiles3dKey?:string;jevUrl?:string}
 export function parseOptions(search:string):AppOptions{
  const p=new URLSearchParams(search),seed=p.get("seed"),cam=(p.get("camera")??"").toUpperCase() as CameraMode,rate=Number(p.get("rate"));
  return {seed:seed&&/^\d{1,19}$/.test(seed)?BigInt(seed):1n,scenario:p.get("scenario")==="seeded"?"seeded":"default",pilot:p.get("pilot")?.toUpperCase()==="MANUAL"?"MANUAL":"AUTOPILOT",
@@ -24,7 +30,11 @@ export function parseOptions(search:string):AppOptions{
   ...(/^[A-Za-z0-9-]{2,8}$/.test(p.get("airport")??"")?{airport:p.get("airport")!.toUpperCase()}:{}),...(/^[0-9]{1,2}[LRCT]?$/i.test(p.get("runway")??"")?{runway:p.get("runway")!.toUpperCase()}:{}),
   ...(p.get("terrain")?{terrainUrl:p.get("terrain")!}:{}),...(p.get("features")?{featuresUrl:p.get("features")!}:{}),
   ...(/^[A-Za-z0-9-]{2,8}$/.test(p.get("to")??"")?{destination:p.get("to")!.toUpperCase()}:{}),...(/^[0-9]{1,2}[LRCT]?$/i.test(p.get("toRunway")??"")?{destinationRunway:p.get("toRunway")!.toUpperCase()}:{}),
-  ...tiles3dOption(p),...(jevUrlOption(p.get("jevUrl"))?{jevUrl:jevUrlOption(p.get("jevUrl"))!}:{})};
+  ...tiles3dOption(p),...(jevUrlOption(p.get("jevUrl"))?{jevUrl:jevUrlOption(p.get("jevUrl"))!}:{}),
+  ...(p.get("world")==="landscape"?{world:"landscape" as const,planetSeed:seed&&/^\d{1,19}$/.test(seed)?seed:"7"}:{}),...brandOption(p.get("brand")),
+  reveal:p.get("reveal")==="1",sound:p.get("sound")!=="0"};
+}
+function brandOption(raw:string|null):{brand?:unknown}{if(!raw)return {};try{return {brand:JSON.parse(raw)}}catch{return {}}
 }
 function tiles3dOption(p:URLSearchParams):Pick<AppOptions,"tiles3d"|"tiles3dKey">{
  const url=p.get("tiles3d")??"",key=p.get("tiles3dKey")??"",off=p.get("tiles3dOffset"),offsetM=off!==null&&Number.isFinite(Number(off))?Number(off):undefined;
@@ -76,6 +86,19 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
  // Read-only hook for automated QA and debugging.
  useEffect(()=>{(globalThis as any).flightSim={get world(){return store.latest?.world},get pilot(){return store.pilot},get camera(){return cameraRef.current},get fps(){return store.fps},get paused(){return store.paused},get checksum(){return store.client.checksum},get geo(){return store.latest?.geo},get terrainTiles(){return store.terrain.size},get featurePatches(){return store.features.size},get tiles3d(){return {...tilesStatus.current}}}},[store]);
  const cameraRef=useRef(camera);cameraRef.current=camera;
+ // The build-and-reveal sequence (simulated planet): one director clock for the picture, the editor and the sound.
+ const director=useMemo(()=>new RevealDirector(),[]),[revealing,setRevealing]=useState(false),sound=useRef<{ctx:AudioContext;s:RevealSound}|null>(null);
+ useEffect(()=>director.onChange(p=>{setRevealing(p);if(!p&&sound.current){sound.current.s.stop();void sound.current.ctx.close();sound.current=null}}),[director]);
+ const startReveal=useCallback((withSound:boolean)=>{
+  if(sound.current){sound.current.s.stop();void sound.current.ctx.close();sound.current=null}
+  if(withSound&&options.sound!==false&&typeof AudioContext==="function"){try{const ctx=new AudioContext(),s=new RevealSound(ctx);s.schedule(ctx.currentTime+.05);sound.current={ctx,s}}catch(e){console.warn(`Reveal sound unavailable: ${(e as Error).message}`)}}
+  director.start()},[director,options.sound]);
+ const landscapeReady=hud.worldKind==="landscape"&&hud.landscape?.state==="READY"&&!!store.landscape;
+ const autoReveal=useRef(!!options.reveal);
+ useEffect(()=>{if(landscapeReady&&autoReveal.current){autoReveal.current=false;startReveal(false)}},[landscapeReady,startReveal]);
+ useEffect(()=>{const f=(globalThis as any).flightSim;if(!f)return;
+  Object.defineProperties(f,{landscape:{get:()=>store.latest?.landscape,configurable:true},landscapeInfo:{get:()=>store.landscape,configurable:true},revealTime:{get:()=>director.time(),configurable:true}});
+  f.revealStart=(withSound=false)=>startReveal(withSound);f.revealSeek=(t:number|null)=>director.seek(t);f.revealStop=()=>director.stop();f.revealSound=()=>renderRevealSound()},[store,director,startReveal]);
  return <>
   <RenderBoundary onError={m=>store.showError(m,true)}>
    <Canvas className="view" shadows={options.quality==="high"} dpr={options.quality==="low"?1:[1,2]} camera={{fov:60,near:.3,far:60000}}
@@ -84,9 +107,10 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
     onCreated={({gl})=>{gl.toneMapping=THREE.ACESFilmicToneMapping;gl.toneMappingExposure=.62;gl.shadowMap.type=THREE.PCFSoftShadowMap;
      gl.domElement.addEventListener("webglcontextlost",e=>{e.preventDefault();store.showError("The graphics context was lost (GPU reset). Reload the page to continue.",true)})}}>
     <SimulationDriver store={store}/>
-    <Scenery onReady={onScenery} geo={!!hud.airport} store={store} probe={probe} fieldHidden={photoreal&&!!hud.airport}/>
-    <ViewDistance geo={!!hud.airport}/>
-    <GeoTerrain store={store} probe={probe} hidden={photoreal&&!!hud.airport}/>
+    <Scenery onReady={onScenery} geo={!!hud.airport} planet={hud.worldKind==="landscape"} store={store} probe={probe} fieldHidden={photoreal&&!!hud.airport}/>
+    <ViewDistance geo={!!hud.airport} planet={hud.worldKind==="landscape"}/>
+    {hud.worldKind==="landscape"?<LandscapeWorld store={store} probe={probe} scenery={scenery} director={director} quality={options.quality}/>:<GeoTerrain store={store} probe={probe} hidden={photoreal&&!!hud.airport}/>}
+    {revealing&&<RevealCamera store={store} director={director}/>}
     <GeoFeatures store={store} probe={probe} hidden={photoreal&&!!hud.airport}/>
     {hud.geo&&<GeoAirports airports={hud.geo.airports} home={hud.geo.airport} destination={hud.geo.route?.destination}/>}
     {hud.geo?.route&&<GeoRoute path={hud.geo.route.path}/>}
@@ -95,18 +119,20 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
     <Aircraft store={store} model={model}/>
     <Entities store={store} entities={entities}/>
     <Trail store={store} model={model}/>
-    <CameraController mode={camera} model={model} scenery={scenery} probe={hud.airport?probe:undefined}/>
+    <CameraController mode={camera} model={model} scenery={scenery} probe={hud.airport||hud.worldKind==="landscape"?probe:undefined} disabled={revealing}/>
     <QualityGovernor store={store} quality={options.quality}/>
    </Canvas>
   </RenderBoundary>
+  {revealing?<EditorOverlay director={director} info={store.landscape} status={hud.landscape} onSkip={()=>director.stop()}/>:<>
   <TopBar hud={hud} camera={camera} panel={panel} ai={ai} store={store} onCamera={nextCamera} onPanel={()=>setPanel(v=>!v)} onAi={()=>setAi(v=>!v)} onHelp={()=>setHelp(v=>!v)}/>
   {ai&&<AiPanel hud={hud} store={store} onClose={()=>setAi(false)}/>}
-  <StartPanel hud={hud} store={store}/>
+  <StartPanel hud={hud} store={store} onReveal={()=>startReveal(true)}/>
   <ErrorBox hud={hud}/><Banner hud={hud}/>
-  {hud.geo&&<GeoBadge geo={hud.geo}/>}{hud.geo&&<Attribution lines={[...hud.geo.attribution,...credits]}/>}
+  {hud.geo&&<GeoBadge geo={hud.geo}/>}{hud.worldKind==="landscape"&&hud.landscape&&<LandscapeBadge status={hud.landscape}/>}{hud.geo&&<Attribution lines={[...hud.geo.attribution,...credits]}/>}
   {/* Parked on the runway the Start card offers the same action, and on phones the yoke would cover it. */}
   {hud.started&&<TouchPad store={store}/>}
   {options.hud&&<footer className="dock"><Readout hud={hud}/>{panel&&<Instruments store={store}/>}<MovingMap store={store}/></footer>}
   {help&&<Help onClose={()=>setHelp(false)}/>}
+  </>}
  </>;
 }

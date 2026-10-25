@@ -5,6 +5,8 @@ import {PerfectSensorSuite,circuitObjective} from "@flight/sensors";
 import {FlightTraceRecorder,LearningRecorder,emptyBook,parseBook,situationOf} from "@flight/learning";
 import {Copilot,copilotFeatures} from "@flight/copilot";
 import {XGBoostBestPracticeClient} from "@flight/experience/xgboost-client";
+import {CLAWD,Planet,parseBrand} from "@flight/landscape";
+import type {LandscapeStatus,TerrainPatch} from "@flight/protocol";
 import {AirportIndex,DEFAULT_FEATURES_URL,GeoWorld,SAMPLE_AIRPORTS_CSV,SAMPLE_RUNWAYS_CSV,cacheApiStore,cachingFetch,decodeCatalog,parseOurAirports,searchAirports,terrariumSource,vectorSources,type AirportCatalogJson} from "@flight/geospatial";
 // Authoritative flight simulation off the render thread. The page only sends pilot commands and STEP requests.
 const MAX_TICKS_PER_STEP=240,LEARN_EVERY_TICKS=30n;
@@ -52,6 +54,40 @@ const tilesCached=async()=>tileStore?await tileStore.count().catch(()=>null):nul
 // GeoTelemetry samples go into the flight trace every 10 s of flight (and at each re-anchoring).
 const STREAM_EVERY_TICKS=1200n;let lastStreamSample=-1n,lastStreamEpoch=0;
 const pose=()=>({position:world.aircraft.position,velocity:world.aircraft.velocity,heading:world.aircraft.heading});
+// The simulated planet (SET_WORLD world:"landscape"): uplift and erosion from a seed, a continent shaped by a brand.
+// Its ground is a pure function of the seed (tiles are generated on first use), so physics needs no clock hold.
+let planet:Planet|undefined,planetProgress:Pick<LandscapeStatus,"state"|"progress"|"phase"|"detail">|undefined,focus:{x:number;z:number;alt:number}|null=null,lastStream=0;
+const patchBuffers=(add:readonly TerrainPatch[])=>add.flatMap(p=>[p.positions.buffer,p.colors.buffer,p.indices.buffer,...(p.attrs?[p.attrs.buffer]:[]),...(p.trees?[p.trees.buffer]:[]),...(p.buildings?[p.buildings.buffer]:[])]);
+function landscapeStatus():LandscapeStatus|undefined{
+ if(!planetProgress)return undefined;
+ const blank={seed:"",brand:"",tiles:0,trees:0,buildings:0,actors:0,terrainElevationM:null,aglM:null,surface:"AIRFIELD" as const,rings:{}};
+ if(!planet)return {...blank,...planetProgress};
+ const a=world.aircraft.position;return {...planet.status(a.x,a.y,a.z),...planetProgress};
+}
+/** Streams planet meshes around the reveal camera (FOCUS) or the aircraft: at most one new detail tile per call. */
+function streamPlanet(force=false){
+ if(!planet)return;const now=Date.now();if(!force&&now-lastStream<120)return;lastStream=now;
+ const a=world.aircraft.position,f=focus??{x:-a.x,z:a.z,alt:a.y+planet.land.padElevation};
+ const {add,remove}=planet.stream(f.x,f.z,f.alt,force?4:1);
+ if(add.length||remove.length)emit({type:"TERRAIN",epoch:geoEpoch,add,remove},patchBuffers(add));
+}
+function setPlanet(seed:bigint,brandRaw:unknown){
+ const brand=brandRaw===undefined||brandRaw===null?CLAWD:parseBrand(brandRaw);
+ if(!brand)throw new Error("invalid brand: rectangles in brand units (land, lakes) that fit a 130 km continent");
+ setWorld(null);
+ const epoch=geoEpoch;planet=undefined;focus=null;planetProgress={state:"GENERATING",progress:0,phase:"uplift"};publish();
+ let last=0;
+ const p=new Planet({seed,brand,onProgress:(phase,f)=>{const now=Date.now();if(now-last<100&&f<1)return;last=now;
+  const share={uplift:0,erosion:.05,ecology:.85,reveal:.95,ready:1}[phase]??0,next={uplift:.05,erosion:.85,ecology:.95,reveal:1,ready:1}[phase]??1;
+  planetProgress={state:"GENERATING",progress:share+(next-share)*f,phase};publish()}});
+ if(epoch!==geoEpoch)return;
+ planet=p;planetProgress={state:"READY",progress:1,phase:"ready"};
+ sim.setGround(p.ground,p.landable);world=sim.reset(scenario);controls={aileron:0,elevator:0,rudder:0,throttle:0};
+ const info=p.info,heights=info.heights.slice();
+ emit({type:"LANDSCAPE",info:{...info,heights}},[heights.buffer]);
+ streamPlanet(true);
+ void p.computeManifest().then(()=>{if(planet===p)publish()});
+}
 function setWorld(airport:string|null,runway?:string,terrainUrl?:string,featuresUrl:string|null=DEFAULT_FEATURES_URL,destination?:string,destinationRunway?:string){
  // Build the new world first: an unknown runway or destination throws here and leaves the current world as it was.
  let g:GeoWorld|undefined;
@@ -66,6 +102,7 @@ function setWorld(airport:string|null,runway?:string,terrainUrl?:string,features
   g=w;
  }
  geo?.dispose();geo=g;const epoch=++geoEpoch;
+ if(planet||planetProgress){planet=undefined;planetProgress=undefined;focus=null;sim.setGround(undefined)}
  emit({type:"TERRAIN",epoch,add:[],remove:[],clear:true});emit({type:"FEATURES",epoch,add:[],remove:[],clear:true});
  sim.setGround(g?.ground,g?.landable);void g?.prepare();
  world=sim.reset(scenario);controls={aileron:0,elevator:0,rudder:0,throttle:0};
@@ -82,7 +119,7 @@ function observe():Observation{
 const autopilotMode=()=>deciding?"DECIDING":decided?`${decided.intent} · ${decided.source==="JEV"?"Jev":"learned"}`:"—";
 function publish(seq?:number){emit({type:"WORLD",world,seq,controls,pilot,intent:flownIntent(),autopilotMode:world.objective.phase==="COMPLETE"?"LANDED":world.objective.phase==="FAILED"?"CRASHED":autopilotMode(),scenarioId:scenario.id,paused,
  learning:learner.enabled,insight:learner.enabled?learner.insight(observe()):undefined,
- ...(copilot.enabled||copilot.status.jev!=="OFF"?{copilot:advice,copilotStatus:copilot.status}:{}),...(geo?{geo:geo.status(pose(),world)}:{})})}
+ ...(copilot.enabled||copilot.status.jev!=="OFF"?{copilot:advice,copilotStatus:copilot.status}:{}),...(geo?{geo:geo.status(pose(),world)}:{}),...(planetProgress?{landscape:landscapeStatus()}:{})})}
 // Learning and traces observe the flight; they never feed back into the controls, so runs stay bit-for-bit
 // deterministic. Manual and autopilot flying are recorded alike, as the pilot intent being flown.
 const flownIntent=():PilotIntent=>pilot==="AUTOPILOT"?decided?.intent??"HOLD":intent;
@@ -169,7 +206,7 @@ async function handle(data:SimCommand){
       if(geo.route&&world.objective.phase!=="COMPLETE"&&geo.arrived(world)){world={...world,objective:{phase:"COMPLETE",checkpointReached:true}};sim.restore(world)}
      }
     }
-    geo?.update(pose());
+    geo?.update(pose());streamPlanet();
     if(geo&&geo.state!=="LOADING"){const bucket=world.tick/STREAM_EVERY_TICKS;if(bucket!==lastStreamSample||geo.frameEpoch!==lastStreamEpoch){lastStreamSample=bucket;lastStreamEpoch=geo.frameEpoch;const stream=geo.streamSample(pose());tracer.stream(world.tick,stream);emit({type:"WORLD_STREAM",tick:String(world.tick),stream})}}
     const finishing=done()&&!ended;if(finishing)ended=true;
     const landed=world.objective.phase==="COMPLETE";
@@ -194,8 +231,18 @@ async function handle(data:SimCommand){
      .catch(e=>emit({type:"ROUTE_PACK",state:"ERROR",done:0,total:0,failed:0,cached:null,detail:e instanceof Error?e.message:String(e)}));
     return;
    }
+   case "FOCUS":{
+    const f=data.focus;
+    if(f!==null&&!(f&&[f.x,f.z,f.alt].every(v=>typeof v==="number"&&Number.isFinite(v))))throw new Error("invalid focus");
+    focus=f?{x:f.x,z:f.z,alt:f.alt}:null;streamPlanet(true);publish();return;
+   }
    case "CLEAR_TILE_CACHE":await tileStore?.clear();emit({type:"ROUTE_PACK",state:"CLEARED",done:0,total:0,failed:0,cached:await tilesCached()});return;
    case "SET_WORLD":{
+    if(data.world==="landscape"){
+     const seed=data.seed??"7";if(typeof seed!=="string"||!/^\d{1,19}$/.test(seed))throw new Error(`invalid planet seed ${String(seed)}`);
+     setPlanet(BigInt(seed),data.brand);publish();return;
+    }
+    if(data.world!==undefined&&data.world!=="real")throw new Error(`unknown world ${String(data.world)}`);
     await catalog;
     if(data.airport!==null&&(typeof data.airport!=="string"||!airports.find(data.airport)))throw new Error(`unknown airport ${String(data.airport)}`);
     if(data.destination!==undefined&&data.destination!==null&&(typeof data.destination!=="string"||!airports.find(data.destination)))throw new Error(`unknown destination ${String(data.destination)}`);

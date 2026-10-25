@@ -32,9 +32,11 @@ export interface Scenery{sun:THREE.DirectionalLight;sunDirection:THREE.Vector3;
  * With `geo` (anchored to a real airport) the procedural hills, lake and river are left out: real terrain streams in
  * around the airfield instead, visible to the horizon, so the sky follows the camera and the fog starts far out.
  */
-export function buildScenery(root:THREE.Object3D,scene:THREE.Scene,renderer:THREE.WebGLRenderer,{geo=false}:{geo?:boolean}={}):Scenery{
+export function buildScenery(root:THREE.Object3D,scene:THREE.Scene,renderer:THREE.WebGLRenderer,{geo=false,planet=false}:{geo?:boolean;planet?:boolean}={}):Scenery{
+ // The simulated planet brings its own sky (to black space), ocean and haze; its clouds are out (they average into fog from orbit).
+ if(planet)geo=true;
  // --- Sky, sun and atmosphere
- const sky=new Sky();sky.scale.setScalar(geo?1.2e6:40000);root.add(sky);
+ const sky=new Sky();sky.scale.setScalar(geo?1.2e6:40000);sky.visible=!planet;root.add(sky);
  const u=sky.material.uniforms;u.turbidity!.value=5.5;u.rayleigh!.value=1.35;u.mieCoefficient!.value=.004;u.mieDirectionalG!.value=.82;
  const sunDirection=new THREE.Vector3().setFromSphericalCoords(1,THREE.MathUtils.degToRad(90-38),THREE.MathUtils.degToRad(145));
  u.sunPosition!.value.copy(sunDirection);
@@ -59,8 +61,8 @@ export function buildScenery(root:THREE.Object3D,scene:THREE.Scene,renderer:THRE
   g.globalAlpha=1;g.strokeStyle="#8e8a7e";g.lineWidth=3;for(let i=0;i<7;i++){g.beginPath();const y=rand(0,1024);g.moveTo(0,y);g.bezierCurveTo(300,y+rand(-80,80),700,y+rand(-80,80),1024,y);g.stroke()}
   const img=g.getImageData(0,0,1024,1024);for(let i=0;i<img.data.length;i+=4){const n=(hash(i%4096,i>>12)-.5)*22,d=img.data;d[i]=d[i]!+n;d[i+1]=d[i+1]!+n;d[i+2]=d[i+2]!+n}g.putImageData(img,0,0);
  });
- const ground=new THREE.Mesh(new THREE.CircleGeometry(FLAT_RADIUS+60,96),new THREE.MeshStandardMaterial({map:texture(fields,9,renderer),roughness:1,metalness:0}));
- ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;field.add(ground);
+ const ground=new THREE.Mesh(new THREE.CircleGeometry(FLAT_RADIUS+60,96),new THREE.MeshStandardMaterial({map:texture(fields,9,renderer),roughness:1,metalness:0,...(planet?{color:0xe0a582}:{})}));
+ ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;ground.visible=!planet;field.add(ground);
  if(!geo){
  // --- Hills and mountains beyond the flying area, lake and river (procedural airfield only)
  const size=36000,seg=220,tg=new THREE.PlaneGeometry(size,size,seg,seg);tg.rotateX(-Math.PI/2);
@@ -124,7 +126,7 @@ export function buildScenery(root:THREE.Object3D,scene:THREE.Scene,renderer:THRE
  barn.count=nbarn;barn.castShadow=true;field.add(barn);
  // --- Clouds: soft billboards grouped into cumulus clusters above the circuit altitude
  const puff=texture(canvas(128,128,g=>{const gr=g.createRadialGradient(64,64,4,64,64,62);gr.addColorStop(0,"rgba(255,255,255,1)");gr.addColorStop(.45,"rgba(250,250,252,.85)");gr.addColorStop(1,"rgba(255,255,255,0)");g.fillStyle=gr;g.fillRect(0,0,128,128)}));
- const clouds=new THREE.Group();root.add(clouds);
+ const clouds=new THREE.Group();clouds.visible=!planet;root.add(clouds);
  for(let k=0;k<55;k++){const cx=rand(-9000,9000),cz=rand(-9000,9000),cy=rand(420,760),n=Math.floor(rand(6,14));
   for(let i=0;i<n;i++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:puff,color:new THREE.Color().setHSL(.6,.1,rand(.88,1)),transparent:true,opacity:rand(.55,.85),depthWrite:false,fog:true}));
    const sz=rand(160,380);sp.scale.set(sz,sz*.62,1);sp.position.copy(toThree(cx+rand(-260,260),cy+rand(-35,45),cz+rand(-200,200)));clouds.add(sp)}}

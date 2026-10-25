@@ -181,6 +181,8 @@ export type { SimCommand, SimEvent, SimPilot, InspectorCommand, LearningBook, Le
 
 export type { RuntimeEvent, DecisionTrace, WorldStreamSample } from "./telemetry.ts";
 export { RUNTIME_CHANNEL } from "./telemetry.ts";
+export type { LandscapeInfo, LandscapeStatus, RevealKey, RevealState, WorldKind } from "./landscape.ts";
+export { PLANET_BLEND_M, PLANET_FLAT_RADIUS_M, PLANET_RADIUS_M, REVEAL, curvatureDrop, lensFov, revealFrame, revealLens, revealPoint, revealShutter, revealState } from "./landscape.ts";
 
 export type { LabConfig, LabModelParams, LabEvaluation, LabMetrics, LabEpisodeSummary, LabImportance, LabTraining, LabGenerationSummary,
   LabTrackPoint, LabDecision, LabEpisodeDetail, LabTreeStep, LabExplanation, LabCommand, LabEvent } from "./lab.ts";

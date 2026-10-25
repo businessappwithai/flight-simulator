@@ -8,6 +8,7 @@ import {CameraRig,type CameraMode} from "./cameras.ts";
 import type {SimStore} from "./sim-store.ts";
 import type {TerrainProbe} from "./terrain-probe.ts";
 import {linearColors} from "./vertex-colors.ts";
+import {TERRAIN_FEATURES,createTerrainMaterial,createTerrainUniforms} from "./terrain-material.ts";
 import {TilesRenderer} from "3d-tiles-renderer";
 import {GoogleCloudAuthPlugin} from "3d-tiles-renderer/plugins";
 /*
@@ -18,9 +19,9 @@ import {GoogleCloudAuthPlugin} from "3d-tiles-renderer/plugins";
 export function SimulationDriver({store}:{store:SimStore}){
  useFrame((_,delta)=>store.frame(delta,document.hidden));return null;
 }
-export function Scenery({onReady,geo=false,store,probe,fieldHidden=false}:{onReady:(s:Scenery)=>void;geo?:boolean;store:SimStore;probe:TerrainProbe;fieldHidden?:boolean}){
+export function Scenery({onReady,geo=false,planet=false,store,probe,fieldHidden=false}:{onReady:(s:Scenery)=>void;geo?:boolean;planet?:boolean;store:SimStore;probe:TerrainProbe;fieldHidden?:boolean}){
  const {scene,gl}=useThree();const root=useMemo(()=>new THREE.Group(),[]),ref=useRef<Scenery|null>(null);
- useEffect(()=>{const s=buildScenery(root,scene,gl,{geo});ref.current=s;onReady(s);if(geo)probe.add(s.field);return()=>{probe.remove(s.field);ref.current=null;s.dispose()}},[root,scene,gl,onReady,geo,probe]);
+ useEffect(()=>{const s=buildScenery(root,scene,gl,{geo,planet});ref.current=s;onReady(s);if(geo||planet)probe.add(s.field);return()=>{probe.remove(s.field);ref.current=null;s.dispose()}},[root,scene,gl,onReady,geo,planet,probe]);
  // The home airfield sits wherever the worker's current frame puts it (it moves when a long flight re-anchors).
  useFrame(()=>{const h=store.latest?.geo?.home;ref.current?.setHome(h?.position??[0,0,0],h?.rotationY??0);if(ref.current)ref.current.field.visible=!fieldHidden});
  return <primitive object={root}/>;
@@ -70,12 +71,14 @@ export function Trail({store,model}:{store:SimStore;model:AircraftModel}){
   pts.current.forEach((v,i)=>attr.setXYZ(i,v.x,v.y,v.z));attr.needsUpdate=true;line.geometry.setDrawRange(0,pts.current.length)});
  return <primitive object={line}/>;
 }
-export function CameraController({mode,model,scenery,probe}:{mode:CameraMode;model:AircraftModel;scenery:React.RefObject<Scenery|null>;probe?:TerrainProbe}){
+export function CameraController({mode,model,scenery,probe,disabled=false}:{mode:CameraMode;model:AircraftModel;scenery:React.RefObject<Scenery|null>;probe?:TerrainProbe;
+ /** Another camera (the reveal) is flying: keep the rig still. */
+ disabled?:boolean}){
  const {camera,gl}=useThree();const rig=useRef<CameraRig|null>(null);
  useEffect(()=>{if(rig.current)rig.current.probe=probe},[probe]);
  useEffect(()=>{const r=new CameraRig(camera as THREE.PerspectiveCamera,gl.domElement);rig.current=r;return()=>{r.dispose();rig.current=null}},[camera,gl]);
- useEffect(()=>{rig.current?.set(mode,model.group)},[mode,model,camera,gl]);
- useFrame((state,delta)=>{if(rig.current){rig.current.probe=probe;rig.current.airfield=scenery.current?.field}if(rig.current&&rig.current.mode!==mode)rig.current.set(mode,model.group);rig.current?.update(model.group,model.eye,Math.min(delta,.1));scenery.current?.update(model.group.position,state.clock.elapsedTime)});
+ useEffect(()=>{if(!disabled)rig.current?.set(mode,model.group)},[mode,model,camera,gl,disabled]);
+ useFrame((state,delta)=>{if(disabled){scenery.current?.update(model.group.position,state.clock.elapsedTime);return}if(rig.current){rig.current.probe=probe;rig.current.airfield=scenery.current?.field}if(rig.current&&rig.current.mode!==mode)rig.current.set(mode,model.group);rig.current?.update(model.group,model.eye,Math.min(delta,.1));scenery.current?.update(model.group.position,state.clock.elapsedTime)});
  return null;
 }
 /** After 3 consecutive slow seconds: drop shadows, then resolution, so slower tablets and GPUs stay usable. */
@@ -96,7 +99,8 @@ export function QualityGovernor({store,quality}:{store:SimStore;quality:"high"|"
 /** `hidden`: photorealistic 3D Tiles show the ground instead (the meshes still keep the camera clear of it). */
 export function GeoTerrain({store,probe,hidden=false}:{store:SimStore;probe:TerrainProbe;hidden?:boolean}){
  const group=useMemo(()=>new THREE.Group(),[]);useEffect(()=>{group.visible=!hidden},[group,hidden]);
- const material=useMemo(()=>new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,metalness:0}),[]);
+ // The shared terrain shader with rock on steep slopes only (real terrain keeps its own colours otherwise).
+ const material=useMemo(()=>{const u=createTerrainUniforms();u.uFeatures.value=TERRAIN_FEATURES.ROCK;u.uRockColor.value.setRGB(.26,.23,.2);return createTerrainMaterial({uniforms:u})},[]);
  useEffect(()=>{
   const meshes=new Map<string,THREE.Mesh>();
   const drop=(k:string)=>{const m=meshes.get(k);if(!m)return;probe.remove(m);group.remove(m);m.geometry.dispose();meshes.delete(k)};
@@ -138,9 +142,9 @@ export function GeoFeatures({store,probe,hidden=false}:{store:SimStore;probe:Ter
  return <primitive object={group}/>;
 }
 /** Far plane for the planet-scale view (terrain to the horizon) or the procedural airfield. */
-export function ViewDistance({geo}:{geo:boolean}){
+export function ViewDistance({geo,planet=false}:{geo:boolean;planet?:boolean}){
  const {camera}=useThree();
- useEffect(()=>{const c=camera as THREE.PerspectiveCamera;c.far=geo?1.2e6:60000;c.near=geo?.5:.3;c.updateProjectionMatrix()},[camera,geo]);
+ useEffect(()=>{const c=camera as THREE.PerspectiveCamera;c.far=planet?4e6:geo?1.2e6:60000;c.near=geo||planet?.5:.3;c.updateProjectionMatrix()},[camera,geo,planet]);
  return null;
 }
 /** Nearby real airports: a beacon at each, and runway strips once within 50 km (their positions come from the worker). */

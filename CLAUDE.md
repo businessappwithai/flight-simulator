@@ -22,6 +22,8 @@ bun run simulator:build               # static build → dist/simulator (page + 
 bun run control-room                  # decision replay dashboard, http://localhost:3100
 bun run benchmark                     # reference autopilot over seed-varied scenarios
 bun run geo:flight VOMM VIDP [--live]  # fly a great-circle route through the geospatial streamer (--live: real DEM tiles)
+bun run landscape:hillshade [--seed 7]  # simulated planet: hillshade PNGs of the eroded field and tiles (read before any mesh)
+bun run landscape:clearance [--seed 7]  # the reveal camera's clearance over the final terrain, per frame
 ```
 
 CI (`.github/workflows/ci.yml`) runs `bun install`, `typecheck`, `bun test`, `audit`, `audit:deps`.
@@ -80,6 +82,13 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   traces and go live to Control Room tabs over the `flight-world-runtime` BroadcastChannel; `&tiles3d=` or a stored
   Google key add a 3D Tiles render layer. Tests that need three.js import it from `apps/simulator/node_modules` (see
   `tests/camera-clearance.test.ts`).
+- **Simulated planet (`?world=landscape&seed=7`, `packages/landscape`).** A continent simulated by uplift and
+  stream-power erosion (priority-flood, stochastic receivers, hillslope diffusion), shaped by a BRAND silhouette
+  (Clawd; `&brand=<json>`), refined into 80 m and 10 m tiles that are pure functions of the seed (generated on first
+  use: no clock hold). `Planet.ground` is the physics; patches stream like real terrain (`FOCUS` moves the centre).
+  The build-and-reveal sequence (`▶ Build a world`, `&reveal=1`) is one timeline in `@flight/protocol` (`REVEAL`)
+  driving the shader fronts, the editor overlay, the camera and the Web Audio sound. Browser QA:
+  `.gstack/qa-reports/scripts/landscape-qa.mjs`. See ARCHITECTURE.md.
 - `@flight/experience`'s index re-exports the Bun SQLite store, which cannot load in a browser worker; import
   browser-safe pieces through subpath exports (e.g. `@flight/experience/fingerprint`).
 
@@ -97,7 +106,7 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   the store in `localStorage["flightWorld.learning.v1"]` and validated with `parseBook` on load.
 - URL options (also used by QA): `?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0`;
   real world: `&airport=VNKT&runway=02` (`&terrain=<Terrarium URL template>`, `&features=<vector tiles / .pmtiles URL | off>`),
-  cross-country `&to=VOBL&toRunway=09L`.
+  cross-country `&to=VOBL&toRunway=09L`; simulated planet `?world=landscape&seed=7` (`&reveal=1`, `&sound=0`).
   `globalThis.flightSim` exposes read-only `world`, `pilot`, `camera`, `fps`, `paused`, `checksum` for automation.
 
 ## Browser QA
