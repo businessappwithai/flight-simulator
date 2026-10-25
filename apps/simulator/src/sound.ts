@@ -51,12 +51,12 @@ export class RevealSound{
   if(on(R.enter)){this.#osc("sine",150,T(this.#hit(R.enter)),.45,o,.9,.004,38);this.#noiseBurst(T(this.#hit(R.enter)),.08,o,.5,"lowpass",900)}
   if(on(R.panelsStart))this.#noiseBurst(T(this.#hit(R.panelsStart)),R.panelsEnd-R.panelsStart,o,.35,"bandpass",350,1.4,.25,3200);
   // The land heaves: rumble, grinding grains, a heartbeat on the beat.
-  if(on(R.terrainStart)){const d=R.terrainEnd-R.terrainStart+.4;this.#noiseBurst(T(this.#hit(R.terrainStart)),d,o,.55,"lowpass",90,.8,1.4);this.#osc("sine",34,T(this.#hit(R.terrainStart)),d,o,.5,1.2);
-   for(let t=R.terrainStart;t<R.terrainEnd;t+=.045){const k=(t*7919)%1;if(on(t))this.#noiseBurst(T(t+FRAME),.03+.04*k,o,.08+.06*k,"bandpass",300+900*k,4)}
-   for(let t=R.terrainStart;t<R.terrainEnd;t+=BEAT)if(on(t))for(const dt of [0,.16]){this.#osc("sine",55,T(this.#hit(t+dt)),.22,o,.55,.004,40)}}
+  if(on(R.terrainStart)){const d=R.terrainEnd-R.terrainStart+.4;this.#noiseBurst(T(this.#hit(R.terrainStart)),d,o,.16,"lowpass",90,.8,1.4);this.#osc("sine",34,T(this.#hit(R.terrainStart)),d,o,.14,1.2);
+   for(let t=R.terrainStart;t<R.terrainEnd;t+=.045){const k=(t*7919)%1;if(on(t))this.#noiseBurst(T(t+FRAME),.03+.04*k,o,.03+.03*k,"bandpass",300+900*k,4)}
+   for(let t=R.terrainStart;t<R.terrainEnd;t+=BEAT)if(on(t))for(const dt of [0,.16]){this.#osc("sine",55,T(this.#hit(t+dt)),.22,o,.2,.004,40)}}
   // The flood: a water rush with a boom on its first frame, and the 12 ms click.
-  if(on(R.waterStart)){this.#osc("sine",48,T(this.#hit(R.waterStart)),1.4,o,.9,.003,30);this.#noiseBurst(T(this.#hit(R.waterStart)),.012,o,.6,"highpass",30,.5,.0005);
-   this.#noiseBurst(T(this.#hit(R.waterStart)),R.waterEnd-R.waterStart,o,.42,"lowpass",400,.7,.5,2400)}
+  if(on(R.waterStart)){this.#osc("sine",48,T(this.#hit(R.waterStart)),1.4,o,.4,.003,30);this.#noiseBurst(T(this.#hit(R.waterStart)),.012,o,.6,"highpass",30,.5,.0005);
+   this.#noiseBurst(T(this.#hit(R.waterStart)),R.waterEnd-R.waterStart,o,.16,"lowpass",400,.7,.5,2400)}
   // Rivers: glitter.
   for(let t=R.riversStart;t<R.riversEnd;t+=.03){const k=(t*104729)%1;if(on(t)&&k<.6)this.#osc("sine",2600+5200*k,T(t+FRAME),.07,o,.035,.002)}
   // Forest: pops at the rate the front grows.
@@ -80,10 +80,10 @@ export class RevealSound{
   // The reveal: the loudest moment, in D major.
   const rv=this.#hit(R.reveal,.004);
   if(on(R.reveal)){this.#noiseBurst(T(R.reveal+FRAME),.012,o,.9,"highpass",30,.5,.0005);
-   this.#osc("sine",44,T(rv),2.4,o,1.2,.004,30);this.#osc("sine",73.4,T(rv),1.6,o,.8,.004,62);this.#noiseBurst(T(rv),.25,o,.5,"lowpass",220);
-   this.#noiseBurst(T(rv),2.6,o,.38,"highpass",4500,.5,.003);
+   this.#osc("sine",44,T(rv),2.4,o,1.6,.004,30);this.#osc("sine",73.4,T(rv),1.6,o,1.1,.004,62);this.#noiseBurst(T(rv),.25,o,.7,"lowpass",220);
+   this.#noiseBurst(T(rv),2.6,o,.5,"highpass",4500,.5,.003);
    const hp=this.ctx.createBiquadFilter();hp.type="highpass";hp.frequency.value=45;hp.connect(this.#pad);
-   for(const m of [50,54,57,62,66,69])this.#osc("sawtooth",hz(m),T(rv),1.1,this.#lp(2200),.08,.012);
+   for(const m of [50,54,57,62,66,69])this.#osc("sawtooth",hz(m),T(rv),1.1,this.#lp(2200),.14,.012);
    for(const m of [62,66,69,74])for(const det of [-.08,.08])this.#osc("sawtooth",hz(m+det),T(rv),3,hp,.03,.25);
    for(const [f,q] of [[800,6],[1150,7],[2900,9]] as const){const bq=this.ctx.createBiquadFilter();bq.type="bandpass";bq.frequency.value=f;bq.Q.value=q;bq.connect(this.#pad);
     for(const m of [57,62,66])this.#osc("sawtooth",hz(m),T(rv+.05),2.6,bq,.11,.3)}}

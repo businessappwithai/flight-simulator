@@ -8,7 +8,7 @@
 // - the sound rendered offline: loudness per quarter second, the reveal the loudest quarter, peak below −2 dBFS;
 // - no console errors. Writes landscape-qa.json and exits non-zero on any failed check.
 import {chromium} from "playwright";
-import {readFileSync,writeFileSync,mkdirSync} from "node:fs";
+import {existsSync,readFileSync,writeFileSync,mkdirSync} from "node:fs";
 const OUT=process.env.OUT||".",SITE=process.env.SITE||"http://localhost:3200/";mkdirSync(OUT,{recursive:true});
 const b=await chromium.launch({...(process.env.PW_CHROME?{executablePath:process.env.PW_CHROME}:{}),args:["--use-gl=angle","--use-angle=swiftshader","--enable-unsafe-swiftshader","--ignore-gpu-blocklist"]});
 const p=await (await b.newContext({viewport:{width:960,height:540}})).newPage();
@@ -24,20 +24,22 @@ const stats=png=>p.evaluate(async b64=>{const img=new Image();img.src=`data:imag
  lum.sort((a,b)=>a-b);land.sort((a,b)=>a[0]+a[1]+a[2]-b[0]-b[1]-b[2]);
  return {p99:Math.round(lum[Math.floor(lum.length*.99)]),clipped:clipped/(d.length/4),land:land.length?land[Math.floor(land.length/2)]:null,landShare:land.length/(d.length/4)}},png.toString("base64"));
 const stills=[];
-for(let i=0;i<24;i++){const t=+(i*18/24+.375).toFixed(3);await p.evaluate(t=>flightSim.revealSeek(t),t);await p.waitForTimeout(Number(process.env.SETTLE||7000));
- const png=await p.screenshot({timeout:300000}),file=`still-${String(i+1).padStart(2,"0")}-t${t.toFixed(2)}.png`;writeFileSync(`${OUT}/${file}`,png);
+// REUSE=1 measures the stills already in OUT instead of taking them again (a run takes ~40 min on SwiftShader).
+for(let i=0;i<24;i++){const t=+(i*18/24+.375).toFixed(3),file=`still-${String(i+1).padStart(2,"0")}-t${t.toFixed(2)}.png`;let png;
+ if(process.env.REUSE&&existsSync(`${OUT}/${file}`))png=readFileSync(`${OUT}/${file}`);
+ else{await p.evaluate(t=>flightSim.revealSeek(t),t);await p.waitForTimeout(Number(process.env.SETTLE||7000));png=await p.screenshot({timeout:300000});writeFileSync(`${OUT}/${file}`,png)}
  stills.push({t,frame:Math.round(t*60)+1,file,...await stats(png)});console.log(JSON.stringify(stills.at(-1)))}
 // The orange at the reveal.
 await p.evaluate(()=>flightSim.revealSeek(15.5));await p.waitForTimeout(8000);const reveal=await stats(await p.screenshot({path:`${OUT}/reveal-15.5.png`,timeout:300000}));
 // The forest beat's frame time.
 await p.evaluate(()=>flightSim.revealSeek(9.5));await p.waitForTimeout(8000);
-const frameMs=await p.evaluate(()=>new Promise(r=>{let n=0,t0=0;const f=t=>{if(n===1)t0=t;if(n++===3){r(Math.round((t-t0)/2));return}requestAnimationFrame(f)};requestAnimationFrame(f)}));
+console.log("timing the forest beat…");const frameMs=await p.evaluate(()=>new Promise(r=>{let n=0,t0=0;const f=t=>{if(n===1)t0=t;if(n++===3){r(Math.round((t-t0)/2));return}requestAnimationFrame(f)};requestAnimationFrame(f)}));
 await p.evaluate(()=>flightSim.revealStop());
-const sound=await p.evaluate(()=>flightSim.revealSound());
+console.log("rendering the sound offline…");const sound=await p.evaluate(()=>flightSim.revealSound());console.log(JSON.stringify(sound));
 // Contact sheet: 6 × 4 thumbnails.
 const sheet=await b.newPage({viewport:{width:1440,height:420}});
 await sheet.setContent(`<body style="margin:0;background:#111;display:grid;grid-template-columns:repeat(6,240px);gap:0">${stills.map(s=>`<div style="position:relative"><img src="data:image/png;base64,${require64(`${OUT}/${s.file}`)}" width=240 height=135><span style="position:absolute;left:4px;top:2px;color:#fff;font:11px monospace;text-shadow:0 0 2px #000">f${s.frame} ${s.t}s</span></div>`).join("")}</body>`);
-await sheet.screenshot({path:`${OUT}/contact-sheet.png`,fullPage:true});
+await sheet.screenshot({path:`${OUT}/contact-sheet.png`,fullPage:true,timeout:300000});
 function require64(f){return readFileSync(f).toString("base64")}
 const target=[0xd9,0x77,0x57],dOrange=reveal.land?reveal.land.map((v,k)=>Math.abs(v-target[k])):[999,999,999];
 const checks={
