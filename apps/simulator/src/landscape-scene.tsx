@@ -17,7 +17,7 @@ import type {RevealDirector} from "./reveal.ts";
  */
 const LEVEL={10:"G",12:"L1",14:"L0"} as const;
 /** Exposure low over the land and the extra stops ramped in over the climb (measured: the continent reads as its brand colour from orbit). */
-export const EXPOSURE={base:.9,climbStops:-.62};
+export const EXPOSURE={base:.75,climbStops:-.36};
 const TREE_COLORS=[[0x2c4a24,0x3b5a2a,0x254020],[0x5d6b45,0x6f7a50,0x4f5c3c],[0x7c9a3a,0x92a848,0x6d8c34]] as const;
 export function LandscapeWorld({store,probe,scenery,director,quality}:{store:SimStore;probe:TerrainProbe;scenery:React.RefObject<Scenery|null>;director:RevealDirector;quality:"high"|"low"}){
  const {scene,gl,camera}=useThree();
@@ -71,7 +71,7 @@ export function LandscapeWorld({store,probe,scenery,director,quality}:{store:Sim
  },[store,group,scenery,uniforms,grow]);
  // ---- Tone mapping, haze and the per-frame build state
  useEffect(()=>{const prev={tm:gl.toneMapping,exp:gl.toneMappingExposure,fog:scene.fog};gl.toneMapping=THREE.NeutralToneMapping;
-  const fog=new THREE.FogExp2(0xb9c9d8,1.5e-5);scene.fog=fog;
+  const fog=new THREE.FogExp2(0x9fb2c6,1.5e-5);scene.fog=fog;
   return()=>{gl.toneMapping=prev.tm;gl.toneMappingExposure=prev.exp;scene.fog=prev.fog}},[gl,scene]);
  useFrame((state)=>{
   const r=director.state(),a=atmRef.current,l=store.latest?.landscape,inset=(b:number[]|undefined,d:number,v:THREE.Vector4)=>b?v.set(b[0]!+d,b[1]!+d,b[2]!-d,b[3]!-d):v.set(1,1,0,0);
