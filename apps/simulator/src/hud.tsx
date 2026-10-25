@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useRef,useState,useSyncExternalStore} from "react";
-import type {GeoStatus,PilotIntent} from "@flight/protocol";
+import type {GeoStatus,LandscapeStatus,PilotIntent} from "@flight/protocol";
 import {SixPack,MiniMap,flightData} from "./instruments.ts";
 import type {SimStore,HudState} from "./sim-store.ts";
 import type {CameraMode} from "./cameras.ts";
@@ -62,7 +62,7 @@ export function TouchPad({store}:{store:SimStore}){
    try{e.currentTarget.setPointerCapture(e.pointerId)}catch{/* release still arrives via pointerup/pointercancel on the button */}}} onPointerUp={()=>store.setIntent("HOLD")} onPointerCancel={()=>store.setIntent("HOLD")}>{glyph}</button>:<span key={k}/>)}</div>;
 }
 /** Shown while the aircraft is parked on the runway: nothing moves until the pilot starts. */
-export function StartPanel({hud,store}:{hud:HudState;store:SimStore}){
+export function StartPanel({hud,store,onReveal}:{hud:HudState;store:SimStore;onReveal?:()=>void}){
  // Publish the card's height (it grows with the search, route and offline rows) so phone layouts keep the Jev
  // panel above it instead of under it.
  const observer=useRef<ResizeObserver|null>(null);
@@ -70,14 +70,16 @@ export function StartPanel({hud,store}:{hud:HudState;store:SimStore}){
   if(!el){root.removeProperty("--start-h");return}
   const set=()=>root.setProperty("--start-h",`${Math.ceil(el.getBoundingClientRect().height)}px`);set();observer.current=new ResizeObserver(set);observer.current.observe(el)},[]);
  if(hud.started||!hud.world)return null;
- const geo=hud.geo,loading=geo?.state==="LOADING";
+ const geo=hud.geo,planet=hud.worldKind==="landscape"?hud.landscape:undefined,loading=geo?.state==="LOADING"||(hud.worldKind==="landscape"&&planet?.state!=="READY");
  return <div className="start panel" ref={measure} role="region" aria-label="Ready for departure" data-testid="start-panel">
-  <b>{geo?`Ready on ${geo.airport} runway ${geo.runway}`:"Ready on runway 18"}</b>
+  <b>{geo?`Ready on ${geo.airport} runway ${geo.runway}`:hud.worldKind==="landscape"?"Ready on the simulated planet · runway 18":"Ready on runway 18"}</b>
   {geo&&<p className="k">{geo.name}</p>}
-  {loading?<p>Loading real terrain around the airport…</p>:<p className="intro">Engine at idle, brakes set. Start to begin the take-off roll, or use any flight control.</p>}
+  {hud.worldKind==="landscape"&&<p className="k">{planet?.state==="READY"?`${planet.brand} · seed ${planet.seed} · ${(planet.trees/1000).toFixed(0)}k trees · ${planet.buildings.toLocaleString()} buildings`:`Simulating the planet: ${planet?.phase??"uplift"} ${Math.round((planet?.progress??0)*100)}%`}</p>}
+  {loading?<p>{hud.worldKind==="landscape"?"Uplift and erosion are carving the continent…":"Loading real terrain around the airport…"}</p>:<p className="intro">Engine at idle, brakes set. Start to begin the take-off roll, or use any flight control.</p>}
   <WorldPicker hud={hud} store={store}/>
   <p className="k picker-hint">Close Jev &amp; learning to choose airports.</p>
   <div className="start-actions">
+   {hud.worldKind==="landscape"&&onReveal&&<button onClick={onReveal} disabled={planet?.state!=="READY"} data-testid="start-reveal" title="The build-and-reveal sequence, with sound">▶ Build a world</button>}
    <button className="primary" onClick={()=>{store.setPilot("MANUAL");store.start()}} data-testid="start-manual">Start (manual)</button>
    <button onClick={()=>store.setPilot("AUTOPILOT",true)} aria-disabled={!hud.jevKeyHint} className={hud.jevKeyHint?undefined:"locked"} data-testid="start-autopilot">Start on autopilot</button>
   </div>
@@ -94,8 +96,9 @@ function WorldPicker({hud,store}:{hud:HudState;store:SimStore}){
  const airport=store.airportInfo(hud.airport),runways=airport?.runways??(hud.geo?[hud.geo.runway]:[]),runway=hud.geo?.runway??hud.runway??"";
  const listed=hud.catalog.some(a=>a.ident===hud.airport);
  return <div className="world-picker">
-  <label>From <select value={hud.airport??""} onChange={e=>store.setWorld(e.target.value||null)} data-testid="world-airport">
+  <label>From <select value={hud.worldKind==="landscape"?"@planet":hud.airport??""} onChange={e=>e.target.value==="@planet"?store.setLandscape(true):store.setWorld(e.target.value||null)} data-testid="world-airport">
    <option value="">Flight World airfield (procedural)</option>
+   <option value="@planet">Simulated planet (eroded terrain · Clawd)</option>
    {!listed&&hud.airport&&<option value={hud.airport}>{hud.airport} · {airport?.municipality||airport?.name||hud.geo?.name||""}</option>}
    {hud.catalog.map(a=><option key={a.ident} value={a.ident}>{a.ident} · {a.municipality||a.name}</option>)}
   </select></label>
@@ -130,6 +133,15 @@ function AirportSearch({hud,store}:{hud:HudState;store:SimStore}){
    <button onClick={()=>{store.setWorld(a.ident);setOpen(false)}} data-testid={`from-${a.ident}`}>From</button>
    <button onClick={()=>{store.setDestination(a.ident);setOpen(false)}} disabled={!hud.airport||a.ident===hud.airport} title={hud.airport?undefined:"Pick a real departure airport first"} data-testid={`to-${a.ident}`}>To</button>
   </li>):<li className="k">No airport matches “{q}”.</li>}</ul>}
+ </div>;
+}
+/** The simulated planet under the aircraft: height above the ground, what is below, what the simulation built. */
+export function LandscapeBadge({status}:{status:LandscapeStatus}){
+ const m=(v:number|null)=>v===null?"—":`${Math.round(v*3.28084)} ft`;
+ const state=status.state==="READY"?`${status.tiles} tiles · ${(status.trees/1000).toFixed(0)}k trees · ${status.buildings.toLocaleString()} buildings`:`${status.phase} ${Math.round(status.progress*100)}%`;
+ return <div className="geo panel" role="status" aria-label="Position" data-testid="landscape-badge">
+  <b>{status.brand||"Planet"} · seed {status.seed}</b> <span>AGL {m(status.aglM)}</span> <span className="wide">ELEV {m(status.terrainElevationM)}</span> <span>{status.surface.toLowerCase()}</span>
+  <span className="k wide"> {state}{status.manifest?` · ${status.manifest.slice(0,8)}`:""}</span>
  </div>;
 }
 /** Where the aircraft is on Earth, the terrain under it, and what is streaming. */

@@ -203,3 +203,37 @@ so the airports a flight sees never change mid-flight; the worker processes comm
 - **Rejected worlds.** When the worker refuses `SET_WORLD` (`ERROR.command`), the page retries without the part it
   objected to (`recoverWorld`: unknown runway, destination or destination runway, bad terrain or features URL) and
   only falls back to what the worker is flying when the departure airport itself is unknown; the URL follows.
+
+## Simulated planet (`packages/landscape`, `?world=landscape`)
+
+The third kind of world, after the procedural airfield and the real Earth: a 400 km planet whose continent is
+**simulated rather than painted**, following the "Opus replaced Unreal Engine" prompt pack.
+
+**Where it comes from**
+- **BRAND:** the continent's silhouette is a set of rectangles in brand units (`brand.ts`; Clawd by default, its two lakes the eyes). It is swappable with `&brand=<json>` / `parseBrand`.
+- **Global field:** 513² nodes at 320 m (`landscape.ts`, `erosion.ts`). Tectonic uplift (ridged belts with a notched pass, a plateau) works against implicit stream-power erosion (Braun–Willett). Water is routed over a priority-flooded surface with **stochastic receivers**: a random lower neighbour weighted by slope², so the drainage has no D8 streaks. Hillslope diffusion rounds the ridges. The lake surface sits just below the lowest shore, so no lake is perched.
+- **Detail tiles:** L1 (80 m) and L0 (10 m) tiles refine the field above them with Catmull-Rom. That spline is interpolating, so it keeps the crests (an approximating cubic spline would melt them). Ridged detail and a second stream-power pass then carve V-valleys.
+  - Every tile is a pure function of (seed, brand, tile index). Its edges are the un-eroded refinement, so neighbours agree exactly.
+  - Heights are kept in decimetres.
+  - Only `+ − × ÷ √` and integer hashes are used, so every engine computes the same ground.
+- **Ecology:** about 890k trees are counted per 320 m cell from altitude, slope and moisture, and are placed only for the tiles being shown. A 4,861-building city sits on the first lake's shore.
+
+**Physics** (`Planet.ground`)
+- Bilinear over the 10 m tile, with water and building roofs included, minus the curvature drop `curvatureDrop` (`@flight/protocol`, shared with the meshes and the camera).
+- Exactly 0 on the flat airfield.
+- Tiles are generated synchronously on first use, so a flight never depends on timing and needs no clock hold. The worker and a direct headless run produce the same checksum (`tests/landscape.test.ts`).
+
+**Rendering**
+- The worker streams `TerrainPatch`es: 64 global chunks, then 3×3 rings of L1 and L0 tiles around the aircraft or the reveal camera (`FOCUS`).
+- Patches carry per-vertex attributes (river log-area, forest) plus their trees and buildings. The ring boxes (`LandscapeStatus.rings`) let a coarse level discard itself where a finer one is drawn.
+- `terrain-material.ts` is the shared shader: rock by slope, strata, rivers, build fronts and the orbit tint. Real-world terrain uses it for slope rock only.
+- `atmosphere.ts` draws the sky to black space, the polar-grid ocean on the sphere (coloured by depth), the eye lakes, and the limb.
+
+**The reveal**
+- One timeline (`REVEAL`, `revealState`, `revealPoint` in `@flight/protocol`) drives the fronts, the editor overlay, the camera and the Web Audio sound alike.
+- The camera keys are planned in the worker over the final terrain, and the clearance on every frame is checked to be at least 350 m.
+
+**Checks**
+- `bun run landscape:hillshade`: hillshade images before any mesh.
+- `bun run landscape:clearance`: the per-frame clearance table.
+- `.gstack/qa-reports/scripts/landscape-qa.mjs`: stills, contact sheet, exposure p99 and clipping, the orange against the brand colour from orbit, the forest frame time, and loudness per quarter second.

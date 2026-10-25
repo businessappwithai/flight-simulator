@@ -75,8 +75,12 @@ const MARKER_RADIUS_M = 150_000;
 /** Coarser tiles sit slightly lower, so wherever a finer tile is loaded it draws on top of its parent. */
 const levelDrop = (z: number) => (z >= 14 ? 0 : 2 ** (14 - z) * 1.5);
 
-function colour(h: number, water: boolean): [number, number, number] {
-  if (water) return [38, 84, 112];
+/** Ground colour by height; water by depth (the DEM's bathymetry): turquoise in the shallows, navy over deep water. */
+function colour(h: number, water: boolean, raw = h): [number, number, number] {
+  if (water) {
+    const d = Math.max(0, -raw), mix = (a: number[], b: number[], t: number) => a.map((v, k) => Math.round(v + (b[k]! - v) * Math.min(1, Math.max(0, t)))) as [number, number, number];
+    return d < 30 ? mix([44, 128, 136], [38, 84, 112], d / 30) : mix([38, 84, 112], [14, 36, 74], (d - 30) / 970);
+  }
   const stops: [number, [number, number, number]][] = [[0, [96, 128, 62]], [400, [110, 132, 66]], [1200, [150, 136, 96]], [2600, [120, 112, 100]], [3800, [236, 238, 242]]];
   for (let i = 1; i < stops.length; i++) {
     const [h1, c1] = stops[i]!, [h0, c0] = stops[i - 1]!;
@@ -494,7 +498,7 @@ export class GeoWorld {
         if (b < 1) v = { ...v, y: v.y + (this.#elevation + b * (alt - this.#elevation) - alt) };
         const y = v.y - drop; // on the airfield v.y is the airfield plane (0 before any re-anchoring)
         verts.push(three({ ...v, y }));
-        colors.set(colour(alt, water), (j * n + i) * 3);
+        colors.set(colour(alt, water, h), (j * n + i) * 3);
       }
     }
     // Skirts: each edge is repeated once at the surface and once `skirt` metres lower, joined by a vertical strip facing

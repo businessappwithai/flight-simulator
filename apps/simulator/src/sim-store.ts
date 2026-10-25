@@ -1,4 +1,4 @@
-import type {SimEvent,CopilotAdvice,CopilotStatus,FeaturePatch,FlightTrace,GeoCatalogAirport,GeoStatus,LearningBook,LearningInsight,PilotIntent,SimPilot,TerrainPatch,WorldSnapshot} from "@flight/protocol";
+import type {LandscapeInfo,LandscapeStatus,SimEvent,CopilotAdvice,CopilotStatus,FeaturePatch,FlightTrace,GeoCatalogAirport,GeoStatus,LearningBook,LearningInsight,PilotIntent,SimPilot,TerrainPatch,WorldSnapshot} from "@flight/protocol";
 import {SimulationWorkerClient,type WorldEvent} from "./worker-client.ts";
 import {RUNTIME_CHANNEL,type RuntimeEvent} from "@flight/protocol";
 /**
@@ -25,7 +25,9 @@ export interface HudState{world?:WorldSnapshot;pilot:SimPilot;intent:PilotIntent
  /** Data-source overrides from the URL (dropped again when the worker rejects them). */
  terrainUrl?:string;featuresUrl?:string;
  /** Masked Google 3D Tiles key when one is saved. */
- tiles3dKeyHint?:string}
+ tiles3dKeyHint?:string;
+ /** The simulated planet (world=landscape): its generation and what is under the aircraft. */
+ worldKind:"real"|"landscape";landscape?:LandscapeStatus;planetSeed:string}
 export type RoutePack=Omit<Extract<SimEvent,{type:"ROUTE_PACK"}>,"type">;
 /** Terrain mesh changes for the 3D view; `clear` drops everything first (the world was re-anchored). */
 export interface TerrainDiff{add:readonly TerrainPatch[];remove:readonly string[];clear:boolean}
@@ -75,7 +77,9 @@ export interface StoreOptions{seed:bigint;scenario:ScenarioKind;pilot:SimPilot;r
  /** Buildings/airport surfaces source (vector tiles); "off" disables them; unset uses the worker's default. */
  featuresUrl?:string;
  /** A self-hosted Jev endpoint (already checked by the page: localhost or this site). */
- jevUrl?:string}
+ jevUrl?:string;
+ /** The simulated planet instead of an airport (`?world=landscape`), its seed and an optional brand silhouette. */
+ world?:"real"|"landscape";planetSeed?:string;brand?:unknown}
 export class SimStore{
  readonly client:SimulationWorkerClient;
  latest?:WorldEvent;prevHeading?:number;turnDt=0;
@@ -91,6 +95,8 @@ export class SimStore{
  /** Terrain meshes currently shown, by tile key (the 3D view mirrors this through onTerrain). */
  readonly terrain=new Map<string,TerrainPatch>();#terrainEpoch=0;#terrainListeners=new Set<(d:TerrainDiff)=>void>();
  featuresUrl?:string;
+ /** The simulated planet: its constants and reveal shot once generated (LANDSCAPE), seed and brand. */
+ world:"real"|"landscape"="real";planetSeed="7";brand?:unknown;landscape?:LandscapeInfo;#landscapeListeners=new Set<(i:LandscapeInfo|undefined)=>void>();
  /** Building and airport-surface meshes currently shown, by key (mirrored by the 3D view through onFeatures). */
  readonly features=new Map<string,FeaturePatch>();#featureEpoch=0;#featureListeners=new Set<(d:FeatureDiff)=>void>();
  /** The real runway the aircraft last came to rest on (announced once per touchdown). */
@@ -104,6 +110,7 @@ export class SimStore{
   this.tiles3dKey=storage.get(TILES3D_KEY_STORAGE)||o.tiles3dKey||undefined;
   // The autopilot needs a Jev key; without one the flight starts under manual control.
   this.jevUrl=o.jevUrl;this.seed=o.seed;this.scenario=o.scenario;this.pilot=this.jevKey?o.pilot:"MANUAL";this.rate=o.rate;this.airport=o.airport;this.runway=o.runway;this.terrainUrl=o.terrainUrl;this.featuresUrl=o.featuresUrl;
+  this.world=o.world==="landscape"&&!o.airport?"landscape":"real";this.planetSeed=o.planetSeed??"7";this.brand=o.brand;
   this.destination=o.airport?o.destination:undefined;this.destinationRunway=this.destination?o.destinationRunway:undefined;
   this.client=new SimulationWorkerClient(o.workerUrl);
   this.client.onError=(m,command)=>{this.showError(`Simulation: ${m}`);if(command==="SET_WORLD")this.#worldRejected(m)};
@@ -118,10 +125,11 @@ export class SimStore{
    if(e.type==="AIRPORTS_FOUND"){for(const a of e.airports)this.#seen.set(a.ident,a);if(e.query===this.search.query){this.search={query:e.query,airports:e.airports};this.#notify(true)}return}
    if(e.type==="TERRAIN"){this.#terrainDiff(e.epoch,e.add,e.remove,!!e.clear);return}
    if(e.type==="FEATURES"){this.#featureDiff(e.epoch,e.add,e.remove,!!e.clear);return}
+   if(e.type==="LANDSCAPE"){this.landscape=e.info;for(const l of this.#landscapeListeners)l(e.info);this.#notify(true);return}
    if(e.type!=="WORLD")return;const prev=this.latest?.world;
    this.turnDt=prev?Number(e.world.tick-prev.tick)/120:0;this.prevHeading=prev?.aircraft.heading;this.latest=e;this.#rebased(e);this.#phase(e);this.#landing(e);this.#dirty=true});
   this.client.send({type:"SET_LEARNING",enabled:!!this.jevKey});this.client.send({type:"SET_JEV",apiKey:this.jevKey??null,...(this.jevUrl?{baseUrl:this.jevUrl}:{})});
-  if(this.airport)this.#sendWorld();
+  if(this.airport||this.world==="landscape")this.#sendWorld();
   this.#hud=this.#snapshot();this.restart();
   // After the first restart, which clears banners: a warning about unreadable saved learning must stay visible.
   this.#loadLearning();this.#loadTraces();
@@ -134,6 +142,7 @@ export class SimStore{
   started:this.started,jevKeyHint:this.jevKey?`••••${this.jevKey.slice(-4)}`:undefined,learning:this.learning,insight:this.jevKey?l?.insight:undefined,
   copilot:this.jevKey?l?.copilot:undefined,copilotStatus:this.jevKey?l?.copilotStatus:undefined,
   traces:{flights:this.traces.length,manual:this.traces.filter(t=>t.pilots.includes("MANUAL")).length,autopilot:this.traces.filter(t=>t.pilots.includes("AUTOPILOT")).length},
+  worldKind:this.world,landscape:l?.landscape,planetSeed:this.planetSeed,
   geo:l?.geo,airport:this.airport,runway:this.runway,catalog:this.catalog,destination:this.destination,destinationRunway:this.destinationRunway,catalogTotal:this.catalogTotal,search:this.search,routePack:this.routePack,terrainUrl:this.terrainUrl,featuresUrl:this.featuresUrl,tiles3dKeyHint:this.tiles3dKey?`••••${this.tiles3dKey.slice(-4)}`:undefined}}
  // ---- Real-world terrain (worker → 3D view)
  onTerrain(l:(d:TerrainDiff)=>void){this.#terrainListeners.add(l);return()=>{this.#terrainListeners.delete(l)}}
@@ -148,11 +157,19 @@ export class SimStore{
   if(clear)this.features.clear();for(const k of remove)this.features.delete(k);for(const p of add)this.features.set(p.key,p);
   for(const l of this.#featureListeners)l({add,remove,clear});
  }
- #sendWorld(){this.client.send({type:"SET_WORLD",airport:this.airport??null,...(this.runway?{runway:this.runway}:{}),...(this.terrainUrl?{terrainUrl:this.terrainUrl}:{}),
+ #sendWorld(){
+  if(this.world==="landscape"){this.client.send({type:"SET_WORLD",airport:null,world:"landscape",seed:this.planetSeed,...(this.brand!==undefined?{brand:this.brand}:{})});return}
+  this.client.send({type:"SET_WORLD",airport:this.airport??null,...(this.runway?{runway:this.runway}:{}),...(this.terrainUrl?{terrainUrl:this.terrainUrl}:{}),
   ...(this.featuresUrl?{featuresUrl:this.featuresUrl==="off"?null:this.featuresUrl}:{}),
   ...(this.airport&&this.destination?{destination:this.destination,...(this.destinationRunway?{destinationRunway:this.destinationRunway}:{})}:{})})}
  /** Fly from a real airport and runway (or back to the procedural airfield with null); the aircraft returns to the runway. */
- setWorld(airport:string|null,runway?:string){this.airport=airport??undefined;this.runway=airport?runway:undefined;
+ /** Fly over the simulated planet (or leave it for the procedural airfield). */
+ setLandscape(on:boolean){if(on===(this.world==="landscape"))return;this.world=on?"landscape":"real";this.landscape=undefined;for(const l of this.#landscapeListeners)l(undefined);
+  if(on){this.airport=undefined;this.runway=undefined;this.destination=undefined;this.destinationRunway=undefined}this.#sendWorld();this.restart()}
+ onLandscape(l:(i:LandscapeInfo|undefined)=>void){this.#landscapeListeners.add(l);return()=>{this.#landscapeListeners.delete(l)}}
+ /** Stream the planet's terrain around a point (the reveal camera) instead of the aircraft; null returns to the aircraft. */
+ focus(f:{x:number;z:number;alt:number}|null){this.client.send({type:"FOCUS",focus:f})}
+ setWorld(airport:string|null,runway?:string){if(this.world==="landscape"){this.world="real";this.landscape=undefined;for(const l of this.#landscapeListeners)l(undefined)}this.airport=airport??undefined;this.runway=airport?runway:undefined;
   if(!airport||airport===this.destination){this.destination=undefined;this.destinationRunway=undefined}this.#sendWorld();this.restart()}
  /** Fly to another airport (null: no destination, the local mission). The flight restarts on the departure runway. */
  setDestination(ident:string|null,runway?:string){if(!this.airport)return;this.routePack=undefined;this.destination=ident??undefined;this.destinationRunway=ident?runway:undefined;this.#sendWorld();this.restart()}
