@@ -121,6 +121,9 @@
       ],
       "@flight/geospatial": [
         "./packages/geospatial/src/index.ts"
+      ],
+      "@flight/landscape": [
+        "./packages/landscape/src/index.ts"
       ]
     },
     "jsx": "react-jsx"

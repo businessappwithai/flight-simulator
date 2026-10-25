@@ -1,5 +1,6 @@
 import type {AircraftControls, WorldSnapshot, PilotIntent} from "./index.ts";
 import type {RuntimeEvent,WorldStreamSample} from "./telemetry.ts";
+import type {LandscapeInfo,LandscapeStatus,WorldKind} from "./landscape.ts";
 export type SimPilot="AUTOPILOT"|"MANUAL";
 /**
  * How often a situation/intent pair ended in a landing or a crash, and who was flying. Each finished flight
@@ -92,7 +93,13 @@ export interface FeaturePatch{key:string;layer:"buildings"|"airports";center:Vec
  /** Runway edge lights (points, relative to `center`). */
  lights?:Float32Array}
 /** One terrain tile mesh. Positions are float32 relative to `center` (three.js coordinates, kept in double precision). */
-export interface TerrainPatch{key:string;z:number;center:Vec3Tuple;positions:Float32Array;colors:Uint8Array;indices:Uint16Array}
+export interface TerrainPatch{key:string;z:number;center:Vec3Tuple;positions:Float32Array;colors:Uint8Array;indices:Uint16Array;
+ /** Simulated planet only: per vertex [log10 drainage area (m²), forest density 0..1] for the terrain shader. */
+ attrs?:Float32Array;
+ /** Simulated planet only: trees standing on this patch, [x, y, z, height, kind] each (absolute three.js coordinates; kind 0 pine, 1 juniper, 2 cottonwood). */
+ trees?:Float32Array;
+ /** Simulated planet only: buildings, [x, base y, z, width, depth, height] each (absolute three.js coordinates). */
+ buildings?:Float32Array}
 export interface GeoCatalogAirport{ident:string;name:string;municipality:string;country:string;runways:string[];iata?:string;type?:string;lat?:number;lon?:number}
 export type SimCommand=
  | {type:"RESET";seed:string;scenario?:"default"|"seeded"}
@@ -114,15 +121,21 @@ export type SimCommand=
  | {type:"PACK_ROUTE"}
  /** Forget every tile kept for offline use. */
  | {type:"CLEAR_TILE_CACHE"}
+ /** Simulated planet: stream terrain around this point (three.js x, z; altitude above sea level) instead of the aircraft, e.g. for the reveal camera; null returns to the aircraft. */
+ | {type:"FOCUS";focus:{x:number;z:number;alt:number}|null}
  /** Anchor the flight to a real airport and runway (null: the procedural airfield). `terrainUrl` overrides the Terrarium tile URL template. */
  | {type:"SET_WORLD";airport:string|null;runway?:string;terrainUrl?:string;
+  /** "landscape": the simulated planet (uplift + erosion from `seed`, continent shaped by `brand`) instead; `airport` must be null. */
+  world?:WorldKind;seed?:string;brand?:unknown;
   /** Destination airport (and runway) for a cross-country flight: the autopilot then flies the route and lands there. */
   destination?:string|null;destinationRunway?:string;
   /** Buildings and airport surfaces: OpenMapTiles vector tiles ({z}/{x}/{y} template, TileJSON or .pmtiles URL); null turns them off. Default: OpenFreeMap. */
   featuresUrl?:string|null};
 export type SimEvent=
  | {type:"READY"}
- | {type:"WORLD";world:WorldSnapshot;seq?:number;controls?:AircraftControls;pilot?:SimPilot;intent?:PilotIntent;autopilotMode?:string;scenarioId?:string;paused?:boolean;learning?:boolean;insight?:LearningInsight;copilot?:CopilotAdvice;copilotStatus?:CopilotStatus;geo?:GeoStatus}
+ | {type:"WORLD";world:WorldSnapshot;seq?:number;controls?:AircraftControls;pilot?:SimPilot;intent?:PilotIntent;autopilotMode?:string;scenarioId?:string;paused?:boolean;learning?:boolean;insight?:LearningInsight;copilot?:CopilotAdvice;copilotStatus?:CopilotStatus;geo?:GeoStatus;landscape?:LandscapeStatus}
+ /** The simulated planet is ready: its constants, the global height field and the reveal shot (sent once per landscape). */
+ | {type:"LANDSCAPE";info:LandscapeInfo}
  | {type:"LEARNING";book:LearningBook;reason:"LOADED"|"RECORDED"|"CLEARED"|"REJECTED"}
  | {type:"TRACE";trace:FlightTrace}
  | {type:"CHECKSUM";tick:string;checksum:string}

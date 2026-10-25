@@ -97,6 +97,9 @@
     "packages/lab": {
       "name": "@flight/lab",
     },
+    "packages/landscape": {
+      "name": "@flight/landscape",
+    },
     "packages/learning": {
       "name": "@flight/learning",
     },
@@ -189,6 +192,8 @@
     "@flight/geospatial": ["@flight/geospatial@workspace:packages/geospatial"],
 
     "@flight/lab": ["@flight/lab@workspace:packages/lab"],
+
+    "@flight/landscape": ["@flight/landscape@workspace:packages/landscape"],
 
     "@flight/learning": ["@flight/learning@workspace:packages/learning"],
 
