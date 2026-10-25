@@ -57,7 +57,7 @@ const pose=()=>({position:world.aircraft.position,velocity:world.aircraft.veloci
 // The simulated planet (SET_WORLD world:"landscape"): uplift and erosion from a seed, a continent shaped by a brand.
 // Its ground is a pure function of the seed (tiles are generated on first use), so physics needs no clock hold.
 let planet:Planet|undefined,planetProgress:Pick<LandscapeStatus,"state"|"progress"|"phase"|"detail">|undefined,focus:{x:number;z:number;alt:number}|null=null,lastStream=0;
-const patchBuffers=(add:readonly TerrainPatch[])=>add.flatMap(p=>[p.positions.buffer,p.colors.buffer,p.indices.buffer,...(p.attrs?[p.attrs.buffer]:[]),...(p.trees?[p.trees.buffer]:[]),...(p.buildings?[p.buildings.buffer]:[])]);
+const patchBuffers=(add:readonly TerrainPatch[])=>add.flatMap(p=>[p.positions.buffer,p.colors.buffer,p.indices.buffer,...(p.attrs?[p.attrs.buffer]:[]),...(p.trees?[p.trees.buffer]:[]),...(p.buildings?[p.buildings.buffer]:[]),...(p.uvs?[p.uvs.buffer]:[])]);
 function landscapeStatus():LandscapeStatus|undefined{
  if(!planetProgress)return undefined;
  const blank={seed:"",brand:"",tiles:0,trees:0,buildings:0,actors:0,terrainElevationM:null,aglM:null,surface:"AIRFIELD" as const,rings:{}};
@@ -94,7 +94,7 @@ function setWorld(airport:string|null,runway?:string,terrainUrl?:string,features
  if(airport!==null){
   const w:GeoWorld=new GeoWorld({airports,airport,runway,destination,destinationRunway,terrain:terrariumSource({fetch:tileFetch,...(terrainUrl?{template:terrainUrl}:{})}),
    ...(featuresUrl?{features:vectorSources({url:featuresUrl,fetch:tileFetch})}:{}),
-   onPatches:(add,remove)=>{if(geo===w)emit({type:"TERRAIN",epoch:geoEpoch,add,remove},add.flatMap(p=>[p.positions.buffer,p.colors.buffer,p.indices.buffer]))},
+   onPatches:(add,remove)=>{if(geo===w)emit({type:"TERRAIN",epoch:geoEpoch,add,remove},patchBuffers(add))},
    onFeatures:(add,remove)=>{if(geo===w)emit({type:"FEATURES",epoch:geoEpoch,add,remove},add.flatMap(p=>[p.positions.buffer,p.colors.buffer,...(p.lights?[p.lights.buffer]:[])]))},
    // Re-anchoring moved the local frame: meshes of the old frame are dropped and re-sent in the new one.
    onRebase:()=>{if(geo===w){const e=++geoEpoch;emit({type:"TERRAIN",epoch:e,add:[],remove:[],clear:true});emit({type:"FEATURES",epoch:e,add:[],remove:[],clear:true})}},

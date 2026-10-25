@@ -99,7 +99,9 @@ export interface TerrainPatch{key:string;z:number;center:Vec3Tuple;positions:Flo
  /** Simulated planet only: trees standing on this patch, [x, y, z, height, kind] each (absolute three.js coordinates; kind 0 pine, 1 juniper, 2 cottonwood). */
  trees?:Float32Array;
  /** Simulated planet only: buildings, [x, base y, z, width, depth, height] each (absolute three.js coordinates). */
- buildings?:Float32Array}
+ buildings?:Float32Array;
+ /** Real-world terrain: texture coordinates over the tile's own Web Mercator square (imagery of the same z/x/y drapes onto it). */
+ uvs?:Float32Array}
 export interface GeoCatalogAirport{ident:string;name:string;municipality:string;country:string;runways:string[];iata?:string;type?:string;lat?:number;lon?:number}
 export type SimCommand=
  | {type:"RESET";seed:string;scenario?:"default"|"seeded"}

@@ -105,7 +105,8 @@ The authoritative invariants are in `ARCHITECTURE.md`; the ones that shape every
   Learning (`packages/learning`) is a JSON book of `situationFingerprint|action` → landings/crashes, persisted by
   the store in `localStorage["flightWorld.learning.v1"]` and validated with `parseBook` on load.
 - URL options (also used by QA): `?seed=7&scenario=seeded&pilot=manual&camera=cockpit&rate=2&quality=low&hud=0`;
-  real world: `&airport=VNKT&runway=02` (`&terrain=<Terrarium URL template>`, `&features=<vector tiles / .pmtiles URL | off>`),
+  real world: `&airport=VNKT&runway=02` (`&terrain=<Terrarium URL template>`, `&features=<vector tiles / .pmtiles URL | off>`,
+  `&imagery=<{z}/{x}/{y} satellite tile template | off>`, default Sentinel-2 cloudless by EOX),
   cross-country `&to=VOBL&toRunway=09L`; simulated planet `?world=landscape&seed=7` (`&reveal=1`, `&sound=0`).
   `globalThis.flightSim` exposes read-only `world`, `pilot`, `camera`, `fps`, `paused`, `checksum` for automation.
 

@@ -22,7 +22,10 @@ import {AiPanel,Attribution,Banner,ErrorBox,GeoBadge,LandscapeBadge,Help,Instrum
 // Self-hosted Jev for the autopilot: &jevUrl=http://localhost:<port> (localhost or this site only; see jevUrlOption).
 // Simulated planet: ?world=landscape (&seed=7 also seeds the planet; &brand=<JSON silhouette>; &reveal=1 plays the
 // build-and-reveal sequence once the planet is ready; &sound=0 keeps it silent).
-export interface AppOptions{world?:"real"|"landscape";planetSeed?:string;brand?:unknown;reveal?:boolean;sound?:boolean;seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string;featuresUrl?:string;destination?:string;destinationRunway?:string;tiles3d?:{url?:string;offsetM?:number};tiles3dKey?:string;jevUrl?:string}
+/** Satellite imagery draped on real terrain: Sentinel-2 cloudless (EOX, CC BY 4.0); `&imagery=<{z}/{x}/{y} template>` or `off`. */
+export const DEFAULT_IMAGERY="https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg";
+const IMAGERY_CREDIT="Sentinel-2 cloudless – s2maps.eu by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2016)";
+export interface AppOptions{imagery?:string;world?:"real"|"landscape";planetSeed?:string;brand?:unknown;reveal?:boolean;sound?:boolean;seed:bigint;scenario:ScenarioKind;pilot:SimPilot;rate:number;camera:CameraMode;quality:"high"|"low";hud:boolean;airport?:string;runway?:string;terrainUrl?:string;featuresUrl?:string;destination?:string;destinationRunway?:string;tiles3d?:{url?:string;offsetM?:number};tiles3dKey?:string;jevUrl?:string}
 export function parseOptions(search:string):AppOptions{
  const p=new URLSearchParams(search),seed=p.get("seed"),cam=(p.get("camera")??"").toUpperCase() as CameraMode,rate=Number(p.get("rate"));
  return {seed:seed&&/^\d{1,19}$/.test(seed)?BigInt(seed):1n,scenario:p.get("scenario")==="seeded"?"seeded":"default",pilot:p.get("pilot")?.toUpperCase()==="MANUAL"?"MANUAL":"AUTOPILOT",
@@ -32,7 +35,13 @@ export function parseOptions(search:string):AppOptions{
   ...(/^[A-Za-z0-9-]{2,8}$/.test(p.get("to")??"")?{destination:p.get("to")!.toUpperCase()}:{}),...(/^[0-9]{1,2}[LRCT]?$/i.test(p.get("toRunway")??"")?{destinationRunway:p.get("toRunway")!.toUpperCase()}:{}),
   ...tiles3dOption(p),...(jevUrlOption(p.get("jevUrl"))?{jevUrl:jevUrlOption(p.get("jevUrl"))!}:{}),
   ...(p.get("world")==="landscape"?{world:"landscape" as const,planetSeed:seed&&/^\d{1,19}$/.test(seed)?seed:"7"}:{}),...brandOption(p.get("brand")),
-  reveal:p.get("reveal")==="1",sound:p.get("sound")!=="0"};
+  reveal:p.get("reveal")==="1",sound:p.get("sound")!=="0",...imageryOption(p.get("imagery"))};
+}
+/** Imagery tile template (validated like `&terrain=`), none for `off`, the default otherwise. */
+export function imageryOption(raw:string|null):{imagery?:string}{
+ if(raw==="off")return {};
+ if(raw&&/^(https?:\/\/|\/|\.)/.test(raw)&&/\{z\}/.test(raw)&&/\{x\}/.test(raw)&&/\{y\}/.test(raw))return {imagery:raw};
+ return {imagery:DEFAULT_IMAGERY};
 }
 function brandOption(raw:string|null):{brand?:unknown}{if(!raw)return {};try{return {brand:JSON.parse(raw)}}catch{return {}}
 }
@@ -109,7 +118,7 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
     <SimulationDriver store={store}/>
     <Scenery onReady={onScenery} geo={!!hud.airport} planet={hud.worldKind==="landscape"} store={store} probe={probe} fieldHidden={photoreal&&!!hud.airport}/>
     <ViewDistance geo={!!hud.airport} planet={hud.worldKind==="landscape"}/>
-    {hud.worldKind==="landscape"?<LandscapeWorld store={store} probe={probe} scenery={scenery} director={director} quality={options.quality}/>:<GeoTerrain store={store} probe={probe} hidden={photoreal&&!!hud.airport}/>}
+    {hud.worldKind==="landscape"?<LandscapeWorld store={store} probe={probe} scenery={scenery} director={director} quality={options.quality}/>:<GeoTerrain store={store} probe={probe} hidden={photoreal&&!!hud.airport} imagery={options.imagery}/>}
     {revealing&&<RevealCamera store={store} director={director}/>}
     <GeoFeatures store={store} probe={probe} hidden={photoreal&&!!hud.airport}/>
     {hud.geo&&<GeoAirports airports={hud.geo.airports} home={hud.geo.airport} destination={hud.geo.route?.destination}/>}
@@ -128,7 +137,7 @@ export function App({options,store}:{options:AppOptions;store:SimStore}){
   {ai&&<AiPanel hud={hud} store={store} onClose={()=>setAi(false)}/>}
   <StartPanel hud={hud} store={store} onReveal={()=>startReveal(true)}/>
   <ErrorBox hud={hud}/><Banner hud={hud}/>
-  {hud.geo&&<GeoBadge geo={hud.geo}/>}{hud.worldKind==="landscape"&&hud.landscape&&<LandscapeBadge status={hud.landscape}/>}{hud.geo&&<Attribution lines={[...hud.geo.attribution,...credits]}/>}
+  {hud.geo&&<GeoBadge geo={hud.geo}/>}{hud.worldKind==="landscape"&&hud.landscape&&<LandscapeBadge status={hud.landscape}/>}{hud.geo&&<Attribution lines={[...hud.geo.attribution,...(options.imagery?[options.imagery===DEFAULT_IMAGERY?IMAGERY_CREDIT:"Imagery: "+new URL(options.imagery,location.href).host]:[]),...credits]}/>}
   {/* Parked on the runway the Start card offers the same action, and on phones the yoke would cover it. */}
   {hud.started&&<TouchPad store={store}/>}
   {options.hud&&<footer className="dock"><Readout hud={hud}/>{panel&&<Instruments store={store}/>}<MovingMap store={store}/></footer>}

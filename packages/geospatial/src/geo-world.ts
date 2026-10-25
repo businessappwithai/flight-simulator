@@ -506,12 +506,14 @@ export class GeoWorld {
     // without skirts the sky shows through as dotted white lines along tile edges. The surface copy keeps the strip out
     // of the top surface's vertex normals.
     const skirt = 30 + 2 * levelDrop(t.tile.z), edges = [[...Array(n).keys()].map(i => i), [...Array(n).keys()].map(j => j * n + seg), [...Array(n).keys()].map(i => seg * n + seg - i), [...Array(n).keys()].map(j => (seg - j) * n)];
-    const skirtColors: number[] = [], skirtTris: number[] = [];
+    const skirtColors: number[] = [], skirtTris: number[] = [], uv: number[] = [];
+    // Texture coordinates over the tile's own Web Mercator square (the grid is uniform in it), for imagery of the same z/x/y.
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) uv.push(i / seg, j / seg);
     const mid = verts[Math.floor(n / 2) * n + Math.floor(n / 2)]!;
     for (const edge of edges) for (let s = 0; s < seg; s++) {
       const p = edge[s]!, q = edge[s + 1]!, base = verts.length;
       verts.push(verts[p]!, verts[q]!, [verts[p]![0], verts[p]![1] - skirt, verts[p]![2]], [verts[q]![0], verts[q]![1] - skirt, verts[q]![2]]);
-      for (const v of [p, q, p, q]) skirtColors.push(colors[v * 3]!, colors[v * 3 + 1]!, colors[v * 3 + 2]!);
+      for (const v of [p, q, p, q]) { skirtColors.push(colors[v * 3]!, colors[v * 3 + 1]!, colors[v * 3 + 2]!); uv.push(uv[v * 2]!, uv[v * 2 + 1]!); }
       // Wind the strip so its face points away from the tile's middle (three.js's mirrored x makes this easiest to test).
       const [P, Q] = [verts[p]!, verts[q]!], ex = Q[0] - P[0], ez = Q[2] - P[2], ox = (P[0] + Q[0]) / 2 - mid[0], oz = (P[2] + Q[2]) / 2 - mid[2];
       // Normal of (P, P↓, Q) is (P↓−P)×(Q−P) = (0,−1,0)×(ex,·,ez) = (−ez, 0, ex).
@@ -526,7 +528,7 @@ export class GeoWorld {
     // three.js x is mirrored, so the winding is flipped to keep faces pointing up.
     for (let j = 0; j < seg; j++) for (let i = 0; i < seg; i++) { const a = j * n + i, b = a + 1, d = a + n, e = d + 1; indices.set([a, d, b, b, d, e], k); k += 6; }
     indices.set(skirtTris, k);
-    return { key: tileKey(t.tile), z: t.tile.z, center: c, positions, colors: allColors, indices };
+    return { key: tileKey(t.tile), z: t.tile.z, center: c, positions, colors: allColors, indices, uvs: new Float32Array(uv) };
   }
 
   // ---- Cross-country: the flight plan, re-anchoring, arrival
