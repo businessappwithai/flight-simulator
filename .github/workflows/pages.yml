@@ -49,27 +49,28 @@ jobs:
         uses: actions/deploy-pages@v4
 
   smoke:
-    # Runs after a deploy (against Pages) or, on pull requests, against the built artifact served locally.
+    # Drives the built site in a browser, always from a local HTTP copy of the deployed artifact: the autopilot's
+    # stand-in Jev runs on 127.0.0.1, which Chrome does not let a public HTTPS page reach (Private Network Access), so
+    # against Pages the autopilot gets no decisions and hands the aircraft back. After a deploy the published site
+    # itself is also checked (LIVE_SITE: it loads and parks on the runway).
     needs: [build, deploy]
     if: ${{ !cancelled() && needs.build.result == 'success' && (needs.deploy.result == 'success' || github.event_name == 'pull_request') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        if: github.event_name == 'pull_request'
         with:
           name: github-pages
           path: artifact
-      - name: Serve the built site locally (pull requests)
-        if: github.event_name == 'pull_request'
+      - name: Serve the built site locally
         run: |
           mkdir -p "site/${{ github.event.repository.name }}"
           tar -xf artifact/artifact.tar -C "site/${{ github.event.repository.name }}"
           (cd site && nohup python3 -m http.server 8000 >/dev/null 2>&1 &)
           echo "SITE=http://localhost:8000/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
-      - name: Use the deployed site
+      - name: Also check the deployed site
         if: github.event_name != 'pull_request'
-        run: echo "SITE=${{ needs.deploy.outputs.page_url }}" >> "$GITHUB_ENV"
+        run: echo "LIVE_SITE=${{ needs.deploy.outputs.page_url }}" >> "$GITHUB_ENV"
       - name: Install Playwright Chromium
         run: |
           npm install --no-save --prefix .github/scripts playwright@1.56.1
