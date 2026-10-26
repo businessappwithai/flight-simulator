@@ -1,5 +1,8 @@
-// Smoke test for the published site (GitHub Pages or the same files served locally), with screenshots.
-// SITE=https://<owner>.github.io/flight-simulator/ OUT=shots node .github/scripts/pages-smoke.mjs
+// Smoke test for the built site, with screenshots. The full test (flying, the autopilot, learning, the Control Room)
+// runs against SITE, the built files served over HTTP on localhost; with LIVE_SITE set (after a deploy) the published
+// site is also opened and checked to load. The autopilot cannot be flown against the published site from CI: its
+// stand-in Jev listens on 127.0.0.1, and Chrome blocks a public HTTPS page from reaching it (Private Network Access).
+// SITE=http://localhost:8000/flight-simulator/ [LIVE_SITE=https://<owner>.github.io/flight-simulator/] OUT=shots node .github/scripts/pages-smoke.mjs
 // Optional: CHROMIUM=/path/to/chrome (defaults to Playwright's own Chromium).
 import {chromium} from "playwright";import {appendFileSync,mkdirSync,readFileSync,writeFileSync} from "node:fs";
 // The autopilot is Jev and learning. CI has no Jev endpoint, so a stand-in Jev service on localhost answers the page
@@ -18,6 +21,9 @@ const W=p=>p.evaluate(()=>{const w=flightSim.world;return {tick:Number(w.tick),p
 const text=(p,sel)=>p.locator(sel).first().innerText().catch(()=>"");
 const shot=(p,n)=>p.screenshot({path:`${OUT}/${n}.png`});
 try{
+ // 0. The published site (after a deploy): page, bundle and worker load and the aircraft is parked on the runway.
+ if(process.env.LIVE_SITE){const live=(process.env.LIVE_SITE).replace(/\/?$/,"/"),c=await b.newContext({viewport:{width:1280,height:720}}),lp=await open(c,`${live}?quality=low`);await ready(lp);await lp.waitForTimeout(2000);
+  const lw=await W(lp);check("Deployed site serves the simulator",lw.tick===0&&await lp.getByTestId("start-panel").isVisible(),live);await shot(lp,"00-live-site");await c.close()}
  // 1. First visit: parked on runway 18, manual only, key box offered.
  const ctx=await b.newContext({viewport:{width:1280,height:720}});const p=await open(ctx,`${SITE}?${Q}`);await ready(p);await p.waitForTimeout(2500);
  let w=await W(p);
