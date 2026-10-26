@@ -107,6 +107,12 @@ are unchanged. Three things differ:
   combines them with the camera in double precision (the floating origin). The page uses a logarithmic depth buffer
   and a far plane of 1,200 km.
 
+### Satellite imagery
+
+- Real-world terrain patches carry texture coordinates (`TerrainPatch.uvs`) over their own Web Mercator tile. Each patch is one z/x/y tile, so the imagery tile with the same z/x/y fits it exactly.
+- The page drapes imagery tiles (`&imagery=`) onto the patches, up to z14. The default is Sentinel-2 cloudless 2016 by EOX (CC BY 4.0, credited on screen).
+- Imagery is render-only and page-side. A patch keeps its own vertex colours until its tile arrives, and keeps them if the tile fails, so physics and determinism are untouched and offline flights still render.
+
 ### Buildings and airport surfaces (Phases 2 and 3)
 
 `SET_WORLD` also takes `featuresUrl`: OpenMapTiles-schema vector tiles — OpenFreeMap by default (free, no key, from

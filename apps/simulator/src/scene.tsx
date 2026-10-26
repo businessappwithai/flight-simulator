@@ -96,23 +96,38 @@ export function QualityGovernor({store,quality}:{store:SimStore;quality:"high"|"
  * mesh position (double precision in JS); three.js combines it with the camera in doubles, which is what keeps
  * distant tiles free of float32 jitter (the floating origin).
  */
-/** `hidden`: photorealistic 3D Tiles show the ground instead (the meshes still keep the camera clear of it). */
-export function GeoTerrain({store,probe,hidden=false}:{store:SimStore;probe:TerrainProbe;hidden?:boolean}){
+/**
+ * `hidden`: photorealistic 3D Tiles show the ground instead (the meshes still keep the camera clear of it).
+ * `imagery`: a {z}/{x}/{y} satellite tile template draped over each patch (each patch is one Web Mercator tile, so the
+ * tile of the same z/x/y fits it exactly). Until a tile arrives, or if it cannot be loaded, the patch keeps its own colours.
+ */
+export const IMAGERY_MAX_ZOOM=14;
+export function GeoTerrain({store,probe,hidden=false,imagery}:{store:SimStore;probe:TerrainProbe;hidden?:boolean;imagery?:string}){
  const group=useMemo(()=>new THREE.Group(),[]);useEffect(()=>{group.visible=!hidden},[group,hidden]);
+ const {gl}=useThree();
  // The shared terrain shader with rock on steep slopes only (real terrain keeps its own colours otherwise).
  const material=useMemo(()=>{const u=createTerrainUniforms();u.uFeatures.value=TERRAIN_FEATURES.ROCK;u.uRockColor.value.setRGB(.26,.23,.2);return createTerrainMaterial({uniforms:u})},[]);
  useEffect(()=>{
-  const meshes=new Map<string,THREE.Mesh>();
-  const drop=(k:string)=>{const m=meshes.get(k);if(!m)return;probe.remove(m);group.remove(m);m.geometry.dispose();meshes.delete(k)};
+  const meshes=new Map<string,THREE.Mesh>(),loader=new THREE.TextureLoader();loader.setCrossOrigin("anonymous");
+  const drop=(k:string)=>{const m=meshes.get(k);if(!m)return;probe.remove(m);group.remove(m);m.geometry.dispose();meshes.delete(k);
+   if(m.material!==material){const mm=m.material as THREE.MeshStandardMaterial;mm.map?.dispose();mm.dispose()}};
+  const drape=(p:TerrainPatch,m:THREE.Mesh)=>{
+   const t=/^(\d+)\/(\d+)\/(\d+)$/.exec(p.key);if(!imagery||!p.uvs||!t||Number(t[1])>IMAGERY_MAX_ZOOM)return;
+   const url=imagery.replace("{z}",t[1]!).replace("{x}",t[2]!).replace("{y}",t[3]!);
+   loader.load(url,tex=>{if(meshes.get(p.key)!==m){tex.dispose();return}
+    tex.colorSpace=THREE.SRGBColorSpace;tex.flipY=false;tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping;tex.anisotropy=gl.capabilities.getMaxAnisotropy();tex.needsUpdate=true;
+    m.material=new THREE.MeshStandardMaterial({map:tex,roughness:.95,metalness:0})},undefined,()=>{/* no imagery for this tile: it keeps its own colours */})};
   const add=(p:TerrainPatch)=>{drop(p.key);const g=new THREE.BufferGeometry();
-   g.setAttribute("position",new THREE.BufferAttribute(p.positions,3));g.setAttribute("color",new THREE.BufferAttribute(linearColors(p.colors),3));g.setIndex(new THREE.BufferAttribute(p.indices,1));g.computeVertexNormals();g.computeBoundingSphere();
+   g.setAttribute("position",new THREE.BufferAttribute(p.positions,3));g.setAttribute("color",new THREE.BufferAttribute(linearColors(p.colors),3));g.setIndex(new THREE.BufferAttribute(p.indices,1));
+   if(p.uvs)g.setAttribute("uv",new THREE.BufferAttribute(p.uvs,2));g.computeVertexNormals();g.computeBoundingSphere();
    const m=new THREE.Mesh(g,material);m.position.set(p.center[0],p.center[1],p.center[2]);m.receiveShadow=p.z>=14;m.name=`terrain:${p.key}`;group.add(m);meshes.set(p.key,m);
    // Only the finer levels go into the camera's ray index; coarse far-away tiles never matter for clearance.
-   if(p.z>=11){m.updateMatrixWorld();probe.add(m)}};
+   if(p.z>=11){m.updateMatrixWorld();probe.add(m)}
+   drape(p,m)};
   for(const p of store.terrain.values())add(p);
   const off=store.onTerrain(d=>{if(d.clear)for(const k of [...meshes.keys()])drop(k);for(const k of d.remove)drop(k);for(const p of d.add)add(p)});
   return()=>{off();for(const k of [...meshes.keys()])drop(k)};
- },[store,group,material,probe]);
+ },[store,group,material,probe,imagery,gl]);
  useEffect(()=>()=>material.dispose(),[material]);
  return <primitive object={group}/>;
 }

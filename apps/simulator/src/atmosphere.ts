@@ -59,7 +59,7 @@ void main(){
  float raw=(uv.x<0.||uv.y<0.||uv.x>1.||uv.y>1.)?1.:(uLake>.5?texture2D(uDepth,uv).g:texture2D(uDepth,uv).r);
  float depth=raw*raw*(uLake>.5?80.:3000.)-uRise;
  if(depth<=0.)discard;
- vec3 shallow=vec3(.03,.36,.36),shelf=vec3(.012,.16,.24),deep=vec3(.003,.018,.06);
+ vec3 shallow=vec3(.04,.2,.2),shelf=vec3(.012,.1,.16),deep=vec3(.003,.016,.05);
  vec3 c=mix(shallow,shelf,smoothstep(2.,40.,depth));c=mix(c,deep,smoothstep(60.,900.,depth));
  if(uLake>.5)c=mix(vec3(.02,.2,.22),vec3(.006,.05,.09),smoothstep(3.,40.,depth));
  vec3 v=normalize(cameraPosition-vWorld),n=normalize(vNormalW);
@@ -87,7 +87,7 @@ float sHash(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+
 void main(){
  #include <logdepthbuf_fragment>
  vec3 d=normalize(vDir);float e=d.y-uDip;
- vec3 zen=mix(vec3(.16,.42,1.15),vec3(0.),uSpace),hor=mix(vec3(1.1,1.3,1.55),vec3(.3,.6,1.3),uSpace);
+ vec3 zen=mix(vec3(.07,.2,.62),vec3(0.),uSpace),hor=mix(vec3(.62,.74,.9),vec3(.3,.6,1.3),uSpace);
  float band=exp(-max(e,0.)*mix(3.,40.,uSpace));
  vec3 c=mix(zen,hor,band);
  float sd=max(dot(d,uSun),0.);c+=vec3(1.,.9,.7)*(pow(sd,1800.)*40.+pow(sd,12.)*.25*(1.-uSpace*.7));
@@ -128,7 +128,7 @@ export function createAtmosphere(info:LandscapeInfo,sunDirection:THREE.Vector3):
  const og=new THREE.BufferGeometry();og.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));og.setIndex(idx);
  const water=(lake:boolean)=>new THREE.ShaderMaterial({vertexShader:WATER_VERT,fragmentShader:WATER_FRAG,transparent:true,depthWrite:!lake,fog:true,
   uniforms:THREE.UniformsUtils.merge([THREE.UniformsLib.fog,{uCam:{value:new THREE.Vector2()},uSeaY:{value:-P},uRadius:{value:R},uLake:{value:lake?1:0},
-   uDepth:{value:null},uDomain:{value:domain},uRise:{value:0},uSun:{value:sunDirection.clone()},uSky:{value:new THREE.Color(.45,.6,.8)},uTime:{value:0}}])});
+   uDepth:{value:null},uDomain:{value:domain},uRise:{value:0},uSun:{value:sunDirection.clone()},uSky:{value:new THREE.Color(.36,.48,.66)},uTime:{value:0}}])});
  const oceanMat=water(false);oceanMat.uniforms.uDepth!.value=depth;
  const ocean=new THREE.Mesh(og,oceanMat);ocean.frustumCulled=false;ocean.name="ocean";ocean.renderOrder=1;group.add(ocean);
  // --- Eye lakes: dense curved grids at the lake level (the blink squashes them about their centre line).
@@ -149,7 +149,7 @@ export function createAtmosphere(info:LandscapeInfo,sunDirection:THREE.Vector3):
   oceanMat.uniforms.uCam!.value.set(v.x,v.z);
   const rise=(1-o.water)*420;oceanMat.uniforms.uRise!.value=rise;lakeMat.uniforms.uRise!.value=(1-o.water)*70;
   oceanMat.uniforms.uTime!.value=o.time;lakeMat.uniforms.uTime!.value=o.time;
-  const skyCol=new THREE.Color(.45,.6,.8).lerp(new THREE.Color(.05,.1,.25),space);oceanMat.uniforms.uSky!.value.copy(skyCol);lakeMat.uniforms.uSky!.value.copy(skyCol);
+  const skyCol=new THREE.Color(.36,.48,.66).lerp(new THREE.Color(.05,.1,.25),space);oceanMat.uniforms.uSky!.value.copy(skyCol);lakeMat.uniforms.uSky!.value.copy(skyCol);
   for(const l of lakes)l.scale.z=Math.max(.02,o.eyes);
   rimMat.uniforms.uSpace!.value=THREE.MathUtils.smoothstep(alt,10_000,40_000);
   // Aerial haze: full below 3.5 km, gone by 18 km.

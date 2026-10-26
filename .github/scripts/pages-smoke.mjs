@@ -40,7 +40,17 @@ try{
  await p.keyboard.press("KeyA");check("Autopilot takes over",(await W(p)).pilot==="AUTOPILOT");
  for(let i=0;i<3;i++)await p.getByRole("button",{name:"Faster"}).click();
  await shot(p,"03-flying");
- await p.waitForFunction(()=>["COMPLETE","FAILED"].includes(flightSim.world.objective.phase),null,{timeout:420000});w=await W(p);
+ // Diagnostics: where the flight is every 30 s while it is awaited (on main this wait has timed out against the live
+ // site while passing locally; the log and the failed check's detail say where it stalled).
+ const state=async()=>({s:Math.round((Date.now()-t0)/1000),...await p.evaluate(()=>{const w=flightSim.world,a=w.aircraft;return {tick:Number(w.tick),phase:w.objective.phase,pilot:flightSim.pilot,
+  mode:document.querySelector("[data-testid=mode]")?.textContent??"",y:Math.round(a.position.y),dist:Math.round(Math.hypot(a.position.x,a.position.z)),fps:flightSim.fps,paused:flightSim.paused}}).catch(e=>({error:String(e).slice(0,120)})),jev:jev.calls});
+ const t0=Date.now();let last=await state();console.log(`      state ${JSON.stringify(last)}`);
+ const log=setInterval(async()=>{last=await state();console.log(`      state ${JSON.stringify(last)}`)},30000);
+ try{await p.waitForFunction(()=>["COMPLETE","FAILED"].includes(flightSim.world.objective.phase),null,{timeout:420000})}
+ catch(e){clearInterval(log);last=await state();await shot(p,"03b-timeout").catch(()=>{});
+  throw new Error(`${e instanceof Error?e.message.split("\n")[0]:String(e)} · last state ${JSON.stringify(last)} · last Jev observations ${JSON.stringify(jev.observations.slice(-2)).slice(0,600)}`)}
+ finally{clearInterval(log)}
+ w=await W(p);
  await p.waitForFunction(()=>(localStorage.getItem("flightWorld.traces.v1")??"").length>2,null,{timeout:15000}).catch(()=>{});
  check("The flight lands",w.phase==="COMPLETE",w.phase);
  check("The autopilot flew Jev's decisions",jev.calls>20,`${jev.calls} decisions`);

@@ -16,16 +16,16 @@ const CHUNK = 64, STRIDE = 2;
 
 /** Base albedo (sRGB bytes) of bare ground: terracotta sandstone, paler soil on the flats, sand at the shore. */
 function soil(h: number, water: number, forest: number, wet: number): [number, number, number] {
-  let r = 196, g = 112, b = 80;
+  let r = 150, g = 86, b = 60;
   const flat = 1 - smoothstep(water + 40, water + 500, h);
-  r += (184 - r) * flat * 0.25; g += (128 - g) * flat * 0.25; b += (92 - b) * flat * 0.25;
+  r += (152 - r) * flat * 0.35; g += (112 - g) * flat * 0.35; b += (82 - b) * flat * 0.35;
   const high = smoothstep(1800, 3000, h);
-  r += (170 - r) * high; g += (120 - g) * high; b += (100 - b) * high;
+  r += (128 - r) * high; g += (104 - g) * high; b += (88 - b) * high;
   // A thin beach at the waterline, then a darker sea bed under the shallow water.
-  if (h <= water + 1.5) { const bed = smoothstep(water, water - 8, h); r += (206 - r) * 0.6; g += (168 - g) * 0.6; b += (122 - b) * 0.6; r += (112 - r) * bed; g += (104 - g) * bed; b += (86 - b) * bed; }
+  if (h <= water + 1.5) { const bed = smoothstep(water, water - 8, h); r += (176 - r) * 0.6; g += (150 - g) * 0.6; b += (112 - b) * 0.6; r += (112 - r) * bed; g += (104 - g) * bed; b += (86 - b) * bed; }
   // Far away, forest reads as a darker, greener ground; near, the instanced trees stand on it.
   const f = Math.min(1, forest * 0.75 + wet * 0.3);
-  r += (72 - r) * f; g += (86 - g) * f; b += (52 - b) * f;
+  r += (52 - r) * f; g += (62 - g) * f; b += (38 - b) * f;
   return [r, g, b];
 }
 

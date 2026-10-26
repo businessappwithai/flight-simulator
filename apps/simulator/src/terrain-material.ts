@@ -19,7 +19,7 @@ export interface TerrainUniforms{
  uRockColor:{value:THREE.Color};
 }
 export const createTerrainUniforms=():TerrainUniforms=>({uOrigin:{value:new THREE.Vector2()},uClayR:{value:1e9},uPbrR:{value:1e9},uRiverReveal:{value:99},uOrbit:{value:0},
- uPad:{value:0},uRadius:{value:400_000},uFeatures:{value:1},uTime:{value:0},uWater:{value:1},uRockColor:{value:new THREE.Color(.42,.15,.075)}});
+ uPad:{value:0},uRadius:{value:400_000},uFeatures:{value:1},uTime:{value:0},uWater:{value:1},uRockColor:{value:new THREE.Color(.24,.095,.05)}});
 /** Feature bits: 1 rock by slope, 2 strata, 4 rivers, 8 build fronts and curvature-aware heave (planet only). */
 export const TERRAIN_FEATURES={ROCK:1,STRATA:2,RIVERS:4,FRONTS:8,PLANET:15} as const;
 
@@ -65,7 +65,7 @@ vec3 tStrata(float hs,vec2 xz){
  float thick=mix(41.,96.,tNoise(xz/9000.+7.));
  float t=(hs+warp)/thick,idx=floor(t),f=fract(t);
  float k=tHash(vec2(idx,3.7));
- vec3 c=k<.34?vec3(.52,.2,.1):k<.67?vec3(.50,.26,.13):vec3(.38,.14,.075);
+ vec3 c=k<.34?vec3(.30,.12,.06):k<.67?vec3(.36,.22,.12):vec3(.20,.08,.045);
  return c*(.85+.3*smoothstep(.0,.15,f)*smoothstep(1.,.85,f));
 }`).replace("#include <clipping_planes_fragment>",`#include <clipping_planes_fragment>
  if(uCut.z>uCut.x&&vWorld.x>uCut.x&&vWorld.x<uCut.z&&vWorld.z>uCut.y&&vWorld.z<uCut.w)discard;`).replace("#include <color_fragment>",`#include <color_fragment>
@@ -97,7 +97,7 @@ vec3 tStrata(float hs,vec2 xz){
    diffuseColor.rgb=mix(vec3(.16),vec3(.42),line);
   }
  }
- diffuseColor.rgb*=mix(vec3(1.),vec3(1.5,.96,.82),uOrbit);`).replace("#include <roughnessmap_fragment>",`#include <roughnessmap_fragment>
+ diffuseColor.rgb*=mix(vec3(1.),vec3(2.85,1.9,1.72),uOrbit);`).replace("#include <roughnessmap_fragment>",`#include <roughnessmap_fragment>
  roughnessFactor=mix(roughnessFactor,.18,tRiver);`).replace("#include <emissivemap_fragment>",`#include <emissivemap_fragment>
  if(tOn(8.)){float d=distance(vWorld.xz,uOrigin);
   totalEmissiveRadiance+=vec3(.55,.85,1.)*(1.-smoothstep(0.,60.,abs(d-uClayR)))*step(uClayR,1e8)*1.5+vec3(1.,.8,.55)*(1.-smoothstep(0.,40.,abs(d-uPbrR)))*step(uPbrR,1e8)*.6;}`);
